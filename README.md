@@ -17,10 +17,11 @@
 | [Btrfs RAID0 与子卷实战指南](btrfs/btrfs-raid0-子卷.md) | Btrfs 组建 RAID0 提升性能，子卷布局规划，快照/回滚/还原操作，snapper 定时快照，WinBtrfs 双系统共享数据 |
 | [compsize 命令详解](btrfs/btrfs-compsize-详解.md) | 精确计算 Btrfs 透明压缩的实际效果，Disk Usage / Uncompressed / Referenced 字段辨析，验证 nodatacow 是否生效 |
 
-### 压缩工具
+### 工具
 | 文档 | 简介 |
 |------|------|
 | [tar zstd 压缩解压完全指南](tools/tar-zstd-guide.md) | Zstandard 压缩算法入门，tar 配合 zstd 的常用操作，与 gzip/bzip2/xz 的对比选型 |
+| [Wine & winetricks 完全指南](tools/wine-winetricks-详解.md) | Wine 兼容层原理与安装，WINEPREFIX 多环境隔离，winetricks 组件管理，字体安装，中文乱码修复 |
 
 ### Linux 标准与基础
 | 文档 | 简介 |
