@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-这是一个 Linux 技术文档仓库，主要涵盖 Arch Linux 运维、备份还原、Btrfs 文件系统以及压缩工具的使用指南。
+这是一个 Linux 技术文档仓库，主要涵盖 Arch Linux 运维、备份还原、Btrfs 文件系统、压缩工具以及 Linux 基础标准规范。
 
 ## 目录结构
 
@@ -13,6 +13,7 @@ linux-doc/
 ├── archlinux/    ← Arch Linux 运维（系统备份还原等）
 ├── btrfs/        ← Btrfs 文件系统专题（RAID0、子卷、CoW、压缩工具等）
 ├── tools/        ← 压缩等通用工具使用指南
+├── standards/    ← Linux 标准与基础规范（XDG 等）
 ├── README.md
 └── CLAUDE.md
 ```

@@ -22,6 +22,11 @@
 |------|------|
 | [tar zstd 压缩解压完全指南](tools/tar-zstd-guide.md) | Zstandard 压缩算法入门，tar 配合 zstd 的常用操作，与 gzip/bzip2/xz 的对比选型 |
 
+### Linux 标准与基础
+| 文档 | 简介 |
+|------|------|
+| [XDG Base Directory 规范详解](standards/xdg-base-directory-详解.md) | `.config` `.cache` `.local` 的目录规律，XDG 环境变量体系，dotfile 迁移指南与备份策略 |
+
 ## 目录结构
 
 ```
@@ -29,6 +34,7 @@ linux-doc/
 ├── archlinux/    ← Arch Linux 运维
 ├── btrfs/        ← Btrfs 文件系统专题
 ├── tools/        ← 压缩等工具使用
+├── standards/    ← Linux 标准与基础规范
 ├── README.md
 └── CLAUDE.md
 ```
@@ -39,6 +45,7 @@ linux-doc/
 - **文件系统**: Btrfs（RAID0、子卷、快照、CoW、透明压缩）
 - **压缩**: Zstandard (zstd)、tar
 - **引导**: GRUB、EFI
+- **标准**: XDG Base Directory、freedesktop.org 规范
 
 ## 文档约定
 
