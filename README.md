@@ -26,6 +26,7 @@
 | 文档 | 简介 |
 |------|------|
 | [XDG Base Directory 规范详解](standards/xdg-base-directory-详解.md) | `.config` `.cache` `.local` 的目录规律，XDG 环境变量体系，dotfile 迁移指南与备份策略 |
+| [文件系统层级标准（FHS）详解](standards/fhs-文件系统层级标准-详解.md) | `/` 下所有目录的命名逻辑与用途，`/usr merge`、`/var`、与 XDG 的对应关系 |
 
 ## 目录结构
 
