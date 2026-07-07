@@ -9,6 +9,7 @@
 |------|------|
 | [全盘还原 Arch Linux](archlinux/全盘还原archlinux.md) | 从 Live ISO（U 盘）环境出发，通过备份文件（`.tar.zst`）完整还原 Arch Linux 系统，含分区、挂载、chroot、引导修复全流程 |
 | [KDE 元包详解](archlinux/kde-元包详解.md) | 详解 `plasma-meta`、`kde-applications-meta` 及 12 个子分类元包的结构、内容与选装策略 |
+| [Pacman 完全指南](archlinux/pacman-完全指南.md) | Pacman 包管理器完整教程：安装/删除/升级/搜索，仓库管理，AUR 构建与 yay 助手，pacman 钩子，配置文件优化 |
 
 ### Btrfs 文件系统
 | 文档 | 简介 |
