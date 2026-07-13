@@ -54,6 +54,67 @@ Flatpak **不替代** pacman/apt/dnf，而是和它们分工协作：
 | **启动速度** | 中等（首次较慢） | 较慢 | 快 |
 | **后端闭源** | ❌ 完全开源 | ⚠️ 服务端闭源 | ❌ 完全开源 |
 
+### 1.4 什么该放 Flatpak，什么不该放
+
+并非所有桌面应用都适合 Flatpak。判断标准取决于**该软件在沙箱里能否正常工作**，以及**沙箱隔离对它的价值有多大**。
+
+#### 适合 Flatpak 的软件
+
+| 软件类型 | 典型应用 | 为什么适合 |
+|----------|----------|------------|
+| **浏览器** | Firefox、Chromium、Brave | 攻击面最大（直接处理来自互联网的任意内容），Flatpak 提供纵深防御——即使浏览器内部沙箱被突破，还有一层隔离挡在系统和用户文件之间 |
+| **媒体播放器** | VLC、MPV、Spotify | 只消耗内容，不需要改造系统，沙箱不会妨碍任何功能 |
+| **办公套件** | LibreOffice、OnlyOffice | 只需访问用户文档（通过 Portal 文件选择器），不需要系统工具链 |
+| **绘图与设计** | GIMP、Inkscape、Krita、Blender | 工作流围绕项目文件展开，Portal 文件选择器即可满足；GPU 通过 `--device=dri` 直接透传，渲染性能无损 |
+| **通讯软件** | Slack、Discord、Telegram、Signal | 功能自包含，安全隔离能防止聊天应用中的潜在漏洞影响系统 |
+| **游戏平台与游戏** | Steam、Heroic、Lutris | GPU 和输入设备直接透传，性能无损耗（详见下方说明）；价值在于运行时一致性——游戏依赖的大量 32 位库由 Runtime 统一管理，不依赖宿主 multilib 完整性，宿主编译 glibc 也不会导致游戏崩溃 |
+| **邮件客户端** | Thunderbird、Geary | 邮件内容是外部输入，沙箱隔离有实际安全收益 |
+| **密码管理器** | Bitwarden、KeePassXC | 存储敏感数据，隔离有明确安全价值 |
+| **笔记与写作** | Obsidian、Joplin、Zotero | 工作流围绕数据文件，Portal 足够 |
+| **工具类** | Flatseal、Bottles、OBS Studio | 功能自包含，或本身就是为 Flatpak 生态设计的 |
+
+#### 不适合 Flatpak 的软件
+
+| 软件类型 | 典型应用 | 为什么不合适 |
+|----------|----------|-------------|
+| **IDE 与代码编辑器** | IntelliJ IDEA、VS Code、Android Studio | 核心工作流依赖**宿主工具链**——编译器（gcc/javac）、包管理器（npm/cargo/gradle）、LSP Server、终端、Docker socket、Git、SSH agent——这些全在沙箱外。打通每一层需要大量覆写，且每次更新可能被重置 |
+| **终端模拟器** | Alacritty、Kitty、WezTerm | 终端存在的意义就是操作宿主系统。沙箱里的终端看不到用户 shell、`$PATH`、系统命令——等于废了大半 |
+| **系统监控** | htop、btop、Mission Center | 需要访问 `/proc`、`/sys`、系统调用，沙箱严重限制这些 |
+| **数据库管理** | DBeaver、pgAdmin（连本地数据库） | 连接本地数据库服务需要穿透沙箱网络边界 |
+| **虚拟机与容器管理** | VirtualBox、virt-manager、Docker Desktop | 需要内核级虚拟化权限和设备访问，与沙箱概念根本冲突 |
+| **系统工具** | GParted、Timeshift、备份工具 | 需要直接操作块设备、分区表、系统目录，必然超出沙箱权限 |
+| **硬件配置** | 显卡驱动面板、打印机管理、蓝牙管理 | 需要访问硬件 D-Bus 接口和系统级配置 |
+| **CLI 工具** | git、ffmpeg、imagemagick、youtube-dl | Flatpak 为 GUI 设计，CLI 工具通过沙箱运行后看不到当前工作目录和文件，毫无意义。用 pacman/pipx/cargo 安装 |
+
+#### 为什么游戏和浏览器不会因沙箱变慢？
+
+```
+虚拟机：    硬件模拟 → 指令翻译 → 有性能损耗（10%-30%）
+Flatpak：   namespace 标签 → 无翻译层 → 性能损耗 ≈ 0%
+```
+
+Flatpak 底层是 **Bubblewrap**（内核 namespace），不是虚拟机。它做的事是给进程打上 namespace 标签——“这个进程只能看到 `/home/user/.var/app/xxx` 下的文件”——它是一个**权限边界**，不是**计算边界**：
+
+- **CPU/RAM**：直接使用宿主计算和内存资源，零开销
+- **GPU**：通过 `--device=dri` 直接透传渲染节点，OpenGL/Vulkan 指令原封不动到达驱动
+- **输入**：键盘、鼠标、手柄通过内核 evdev 直接传递，无中间层
+
+基准测试中 Flatpak 版 Steam Proton 运行 3A 游戏的帧率与原生版本差距在 1% 以内，属于统计噪声。
+
+#### 判断流程图
+
+```
+软件是否需要访问宿主工具链（编译器/包管理器/终端/SSH）？
+  ├── 是 → 需要访问系统级设备或内核功能？
+  │         ├── 是 → 🚫 不适合 Flatpak
+  │         └── 否 → ⚠️ 可以但不推荐（IDE 类）
+  └── 否 → 攻击面是否来自外部输入（网页/文件/网络）？
+            ├── 是 → ✅ Flatpak 最佳选择
+            └── 否 → ✅ 适合 Flatpak
+```
+
+> **经验法则：** 如果你的工作流是"打开软件 → 操作 → 产出文件"，Flatpak 适合；如果是"打开软件 → 调用系统工具 → 调试运行 → 产出结果"，Flatpak 不适合。
+
 ---
 
 ## 2. 安装
@@ -501,7 +562,6 @@ sudo pacman -Rs flatpak
 | **音乐** | Spotify | `com.spotify.Client` |
 | **通讯** | Slack | `com.slack.Slack` |
 | **通讯** | Discord | `com.discordapp.Discord` |
-| **开发** | VS Code | `com.visualstudio.code` |
 | **游戏** | Steam | `com.valvesoftware.Steam` |
 | **游戏** | Heroic Games Launcher | `com.heroicgameslauncher.hgl` |
 | **工具** | Flatseal | `com.github.tchx84.Flatseal` |
