@@ -18,6 +18,7 @@
 | [写时复制（Copy-on-Write）详解](btrfs/copy-on-write-详解.md) | 从内核 fork()、mmap、Btrfs 文件系统三重视角拆解 CoW 原理，性能权衡，日志 vs CoW 范式对比 |
 | [Btrfs RAID0 与子卷实战指南](btrfs/btrfs-raid0-子卷.md) | Btrfs 组建 RAID0 提升性能，子卷布局规划，快照/回滚/还原操作，snapper 定时快照，WinBtrfs 双系统共享数据 |
 | [compsize 命令详解](btrfs/btrfs-compsize-详解.md) | 精确计算 Btrfs 透明压缩的实际效果，Disk Usage / Uncompressed / Referenced 字段辨析，验证 nodatacow 是否生效 |
+| [Btrfs 状态查看与健康检查](btrfs/btrfs-状态查看.md) | 文件系统用量、设备错误统计、scrub 数据校验、子卷布局、挂载与压缩确认，常用状态命令速查 |
 
 ### 工具
 | 文档 | 简介 |
