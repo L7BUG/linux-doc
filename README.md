@@ -5,6 +5,7 @@
 ## 文档索引
 
 ### Arch Linux 运维
+
 | 文档 | 简介 |
 |------|------|
 | [全盘还原 Arch Linux](archlinux/全盘还原archlinux.md) | 从 Live ISO（U 盘）环境出发，通过备份文件（`.tar.zst`）完整还原 Arch Linux 系统，含分区、挂载、chroot、引导修复全流程 |
@@ -13,6 +14,7 @@
 | [KDE 使用技巧与快捷键指南](archlinux/kde-使用技巧与快捷键指南.md) | 窗口管理、KRunner 万能启动器、Dolphin 文件管理器、虚拟桌面与活动、KWin 窗口规则、面板自定义、Spectacle 截图、触控板手势 |
 
 ### Btrfs 文件系统
+
 | 文档 | 简介 |
 |------|------|
 | [写时复制（Copy-on-Write）详解](btrfs/copy-on-write-详解.md) | 从内核 fork()、mmap、Btrfs 文件系统三重视角拆解 CoW 原理，性能权衡，日志 vs CoW 范式对比 |
@@ -21,6 +23,7 @@
 | [Btrfs 状态查看与健康检查](btrfs/btrfs-状态查看.md) | 文件系统用量、设备错误统计、scrub 数据校验、子卷布局、挂载与压缩确认，常用状态命令速查 |
 
 ### 工具
+
 | 文档 | 简介 |
 |------|------|
 | [tar zstd 压缩解压完全指南](tools/tar-zstd-guide.md) | Zstandard 压缩算法入门，tar 配合 zstd 的常用操作，与 gzip/bzip2/xz 的对比选型 |
@@ -29,8 +32,10 @@
 | [Rust 入门指南](tools/rust-入门指南.md) | Rust 基础语法，所有权与借用，枚举与模式匹配，Trait 与泛型，错误处理，Cargo 与 crates.io，与 C/C++/Go/Python 对比 |
 | [Flatpak 完全指南](tools/flatpak-完全指南.md) | Flatpak 沙盒化应用分发框架，安装配置、Flathub 仓库、权限管理（Flatseal）、主题统一、国内镜像加速、常见问题 |
 | [Rust 模拟鼠标输入方案](tools/rust-模拟鼠标输入方案.md) | 从 X11 到 Arduino 硬件的 4 种鼠标模拟方案，反作弊检测层级分析，行为随机化技术，设备切换检测与规避 |
+| [虚拟局域网联机方案](tools/虚拟局域网联机方案.md) | 用云服务器实现异地局域网游戏联机，WireGuard / Tailscale / ZeroTier / n2n / OpenVPN 五种方案全解 |
 
 ### Linux 标准与基础
+
 | 文档 | 简介 |
 |------|------|
 | [XDG Base Directory 规范详解](standards/xdg-base-directory-详解.md) | `.config` `.cache` `.local` 的目录规律，XDG 环境变量体系，dotfile 迁移指南与备份策略 |
