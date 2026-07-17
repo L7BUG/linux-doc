@@ -28,6 +28,7 @@
 | [Python 入门指南](tools/python-入门指南.md) | Python 3 基础语法，文件操作（pathlib/shutil），邮件处理（IMAP/SMTP），游戏自动化脚本（pynput/pyautogui），命令行工具编写 |
 | [Rust 入门指南](tools/rust-入门指南.md) | Rust 基础语法，所有权与借用，枚举与模式匹配，Trait 与泛型，错误处理，Cargo 与 crates.io，与 C/C++/Go/Python 对比 |
 | [Flatpak 完全指南](tools/flatpak-完全指南.md) | Flatpak 沙盒化应用分发框架，安装配置、Flathub 仓库、权限管理（Flatseal）、主题统一、国内镜像加速、常见问题 |
+| [Rust 模拟鼠标输入方案](tools/rust-模拟鼠标输入方案.md) | 从 X11 到 Arduino 硬件的 4 种鼠标模拟方案，反作弊检测层级分析，行为随机化技术，设备切换检测与规避 |
 
 ### Linux 标准与基础
 | 文档 | 简介 |
