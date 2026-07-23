@@ -35,6 +35,8 @@
 | [虚拟局域网联机方案](tools/虚拟局域网联机方案.md) | 用云服务器实现异地局域网游戏联机，WireGuard / Tailscale / ZeroTier / n2n / OpenVPN 五种方案全解 |
 | [Caddy 反向代理完全指南](tools/caddy-反向代理指南.md) | Caddy 入门到泛域名证书，常见自建服务反向代理模板、访问控制、日志与调试 |
 | [SSH 端口转发完全指南](tools/ssh-端口转发指南.md) | SSH 隧道详解：`-L` 本地转发、`-R` 远程转发、`-D` 动态代理，附带常用场景和管理命令 |
+| [Tailscale 完全指南](tools/tailscale-完全指南.md) | 基于 WireGuard 的零配置 VPN，安装接入、MagicDNS、Exit Node 出口节点、Subnet Router 子网路由、SSH 集成、Headscale 自建 |
+| [LLM 会话上下文与故障转移原理](tools/llm-会话上下文与failover.md) | LLM 无状态本质、cc-switch failover 上下文无损原理、O(n²) 长对话性能衰减、Compaction/Prompt Cache 缓解策略 |
 
 ### Linux 标准与基础
 
