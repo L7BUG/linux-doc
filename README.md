@@ -38,6 +38,8 @@
 | [Tailscale 完全指南](tools/tailscale-完全指南.md) | 基于 WireGuard 的零配置 VPN，安装接入、MagicDNS、Exit Node 出口节点、Subnet Router 子网路由、SSH 集成、Headscale 自建 |
 | [LLM 会话上下文与故障转移原理](tools/llm-会话上下文与failover.md) | LLM 无状态本质、cc-switch failover 上下文无损原理、O(n²) 长对话性能衰减、Compaction/Prompt Cache 缓解策略 |
 | [ECC 插件 Java 开发指南](tools/ecc-java开发指南.md) | Claude Code ECC 插件体系的 Java 开发用法：agents/skills/rules/commands 全览，构建修复、代码审查、TDD、安全加固工作流 |
+| [ECC Plan 命令完全指南](tools/ecc-plan命令指南.md) | ECC 规划命令家族全解：/plan、/plan-prd、PRP 深度流程（/prp-prd→/prp-plan→/prp-implement）、/plan-orchestrate 桥接，含选择指南 |
+| [Vim 入门指南](tools/vim-入门指南.md) | Vim 模式化编辑思想，四模式对照，高频操作速查（移动/编辑/搜索替换/分屏/宏），最小 .vimrc 配置与学习路径 |
 
 ### Linux 标准与基础
 
