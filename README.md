@@ -41,6 +41,7 @@
 | [ECC Plan 命令完全指南](tools/ecc-plan命令指南.md) | ECC 规划命令家族全解：/plan、/plan-prd、PRP 深度流程（/prp-prd→/prp-plan→/prp-implement）、/plan-orchestrate 桥接，含选择指南 |
 | [Vim 入门指南](tools/vim-入门指南.md) | Vim 模式化编辑思想，四模式对照，高频操作速查（移动/编辑/搜索替换/分屏/宏），最小 .vimrc 配置与学习路径 |
 | [MySQL 与 PostgreSQL 分区详解](tools/mysql-pg分区详解.md) | 两种数据库分区全解：分区类型/建表语法、归档操作（EXCHANGE vs DETACH）、pg_partman 自动化、硬限制对比与分区裁剪优化 |
+| [Hermes 跨机器迁移指南](tools/hermes-迁移指南.md) | Hermes 一键备份/恢复：`hermes backup` 备份范围与参数、SCP 加密传输、`hermes import` 恢复、迁移验证、Telegram 网关恢复、技能跨设备同步 |
 
 ### Linux 标准与基础
 

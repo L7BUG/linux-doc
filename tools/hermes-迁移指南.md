@@ -105,21 +105,29 @@ hermes sync now               # 立即 pull + push
 
 `hermes backup` 负责整机迁移，`hermes sync` 负责技能持续同步，两者配合使用。
 
----
+## 8. 常见问题
 
-## 常见问题
+### Q: 备份文件有多大？
 
-**Q1：备份文件有多大？**
 取决于会话与技能规模。`~/.hermes` 目录中 `hermes-agent` 源码占大头，backup 已自动排除；实际备份通常只有几十到几百 MB。
 
-**Q2：迁移后 API 密钥需要重新配置吗？**
-不需要。`.env` 和 `auth.json` 都在备份范围内，import 后凭据原样恢复。
+### Q: 迁移后 API 密钥需要重新配置吗？
 
-**Q3：迁移后 Telegram 收不到消息？**
+**不需要。** `.env` 和 `auth.json` 都在备份范围内，import 后凭据原样恢复。
+
+### Q: 迁移后 Telegram 收不到消息？
+
 检查 gateway 是否已在新机器启动（见第 6 节），并确认 `hermes status` 中 gateway 状态正常。
 
-**Q4：新机器上 import 前需要先跑 setup 向导吗？**
-不需要。直接安装后 import 即可，备份中的配置会覆盖默认配置。
+### Q: 新机器上 import 前需要先跑 setup 向导吗？
 
-**Q5：只想要会话记录，不要凭据，怎么办？**
+**不需要。** 直接安装后 import 即可，备份中的配置会覆盖默认配置。
+
+### Q: 只想要会话记录，不要凭据，怎么办？
+
 手动只拷贝 `state.db` 和 `sessions/` 目录，或先备份后在新机器上选择性恢复。
+
+## 参考
+
+- [Hermes Agent 官方文档](https://hermes-agent.nousresearch.com/docs/)
+- [Hermes Agent GitHub 仓库](https://github.com/NousResearch/hermes-agent)
