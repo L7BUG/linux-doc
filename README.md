@@ -42,6 +42,7 @@
 | [Vim 入门指南](tools/vim-入门指南.md) | Vim 模式化编辑思想，四模式对照，高频操作速查（移动/编辑/搜索替换/分屏/宏），最小 .vimrc 配置与学习路径 |
 | [MySQL 与 PostgreSQL 分区详解](tools/mysql-pg分区详解.md) | 两种数据库分区全解：分区类型/建表语法、归档操作（EXCHANGE vs DETACH）、pg_partman 自动化、硬限制对比与分区裁剪优化 |
 | [Hermes 跨机器迁移指南](tools/hermes-迁移指南.md) | Hermes 一键备份/恢复：`hermes backup` 备份范围与参数、SCP 加密传输、`hermes import` 恢复、迁移验证、Telegram 网关恢复、技能跨设备同步 |
+| [Hermes 完全指南](tools/hermes-完全指南.md) | Hermes Agent 全解：架构与核心特性（技能/记忆/网关）、安装配置、CLI/TUI/Telegram 使用、常用命令、备份更新等维护 |
 
 ### Linux 标准与基础
 
