@@ -12,7 +12,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 linux-doc/
 ├── archlinux/    ← Arch Linux 运维（系统备份还原等）
 ├── btrfs/        ← Btrfs 文件系统专题（RAID0、子卷、CoW、压缩工具等）
-├── tools/        ← 压缩等通用工具使用指南
+├── tools/        ← 工具使用指南（按主题细分）
+│   ├── dev/      ← 开发/编程（python、rust、vim、ecc 等）
+│   ├── ai/       ← AI 工具（LLM 会话、Hermes 等）
+│   ├── network/  ← 网络/远程（ssh、tailscale、caddy 等）
+│   └── system/   ← 系统/桌面（flatpak、wine、tar-zstd 等）
 ├── standards/    ← Linux 标准与基础规范（XDG 等）
 ├── README.md
 └── CLAUDE.md

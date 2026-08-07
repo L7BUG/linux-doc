@@ -26,23 +26,23 @@
 
 | 文档 | 简介 |
 |------|------|
-| [tar zstd 压缩解压完全指南](tools/tar-zstd-guide.md) | Zstandard 压缩算法入门，tar 配合 zstd 的常用操作，与 gzip/bzip2/xz 的对比选型 |
-| [Wine & winetricks 完全指南](tools/wine-winetricks-详解.md) | Wine 兼容层原理与安装，WINEPREFIX 多环境隔离，winetricks 组件管理，字体安装，中文乱码修复 |
-| [Python 入门指南](tools/python-入门指南.md) | Python 3 基础语法，文件操作（pathlib/shutil），邮件处理（IMAP/SMTP），游戏自动化脚本（pynput/pyautogui），命令行工具编写 |
-| [Rust 入门指南](tools/rust-入门指南.md) | Rust 基础语法，所有权与借用，枚举与模式匹配，Trait 与泛型，错误处理，Cargo 与 crates.io，与 C/C++/Go/Python 对比 |
-| [Flatpak 完全指南](tools/flatpak-完全指南.md) | Flatpak 沙盒化应用分发框架，安装配置、Flathub 仓库、权限管理（Flatseal）、主题统一、国内镜像加速、常见问题 |
-| [Rust 模拟鼠标输入方案](tools/rust-模拟鼠标输入方案.md) | 从 X11 到 Arduino 硬件的 4 种鼠标模拟方案，反作弊检测层级分析，行为随机化技术，设备切换检测与规避 |
-| [虚拟局域网联机方案](tools/虚拟局域网联机方案.md) | 用云服务器实现异地局域网游戏联机，WireGuard / Tailscale / ZeroTier / n2n / OpenVPN 五种方案全解 |
-| [Caddy 反向代理完全指南](tools/caddy-反向代理指南.md) | Caddy 入门到泛域名证书，常见自建服务反向代理模板、访问控制、日志与调试 |
-| [SSH 端口转发完全指南](tools/ssh-端口转发指南.md) | SSH 隧道详解：`-L` 本地转发、`-R` 远程转发、`-D` 动态代理，附带常用场景和管理命令 |
-| [Tailscale 完全指南](tools/tailscale-完全指南.md) | 基于 WireGuard 的零配置 VPN，安装接入、MagicDNS、Exit Node 出口节点、Subnet Router 子网路由、SSH 集成、Headscale 自建 |
-| [LLM 会话上下文与故障转移原理](tools/llm-会话上下文与failover.md) | LLM 无状态本质、cc-switch failover 上下文无损原理、O(n²) 长对话性能衰减、Compaction/Prompt Cache 缓解策略 |
-| [ECC 插件 Java 开发指南](tools/ecc-java开发指南.md) | Claude Code ECC 插件体系的 Java 开发用法：agents/skills/rules/commands 全览，构建修复、代码审查、TDD、安全加固工作流 |
-| [ECC Plan 命令完全指南](tools/ecc-plan命令指南.md) | ECC 规划命令家族全解：/plan、/plan-prd、PRP 深度流程（/prp-prd→/prp-plan→/prp-implement）、/plan-orchestrate 桥接，含选择指南 |
-| [Vim 入门指南](tools/vim-入门指南.md) | Vim 模式化编辑思想，四模式对照，高频操作速查（移动/编辑/搜索替换/分屏/宏），最小 .vimrc 配置与学习路径 |
-| [MySQL 与 PostgreSQL 分区详解](tools/mysql-pg分区详解.md) | 两种数据库分区全解：分区类型/建表语法、归档操作（EXCHANGE vs DETACH）、pg_partman 自动化、硬限制对比与分区裁剪优化 |
-| [Hermes 跨机器迁移指南](tools/hermes-迁移指南.md) | Hermes 一键备份/恢复：`hermes backup` 备份范围与参数、SCP 加密传输、`hermes import` 恢复、迁移验证、Telegram 网关恢复、技能跨设备同步 |
-| [Hermes 完全指南](tools/hermes-完全指南.md) | Hermes Agent 全解：架构与核心特性（技能/记忆/网关）、安装配置、CLI/TUI/Telegram 使用、常用命令、备份更新等维护 |
+| [tar zstd 压缩解压完全指南](tools/system/tar-zstd-guide.md) | Zstandard 压缩算法入门，tar 配合 zstd 的常用操作，与 gzip/bzip2/xz 的对比选型 |
+| [Wine & winetricks 完全指南](tools/system/wine-winetricks-详解.md) | Wine 兼容层原理与安装，WINEPREFIX 多环境隔离，winetricks 组件管理，字体安装，中文乱码修复 |
+| [Python 入门指南](tools/dev/python-入门指南.md) | Python 3 基础语法，文件操作（pathlib/shutil），邮件处理（IMAP/SMTP），游戏自动化脚本（pynput/pyautogui），命令行工具编写 |
+| [Rust 入门指南](tools/dev/rust-入门指南.md) | Rust 基础语法，所有权与借用，枚举与模式匹配，Trait 与泛型，错误处理，Cargo 与 crates.io，与 C/C++/Go/Python 对比 |
+| [Flatpak 完全指南](tools/system/flatpak-完全指南.md) | Flatpak 沙盒化应用分发框架，安装配置、Flathub 仓库、权限管理（Flatseal）、主题统一、国内镜像加速、常见问题 |
+| [Rust 模拟鼠标输入方案](tools/dev/rust-模拟鼠标输入方案.md) | 从 X11 到 Arduino 硬件的 4 种鼠标模拟方案，反作弊检测层级分析，行为随机化技术，设备切换检测与规避 |
+| [虚拟局域网联机方案](tools/network/虚拟局域网联机方案.md) | 用云服务器实现异地局域网游戏联机，WireGuard / Tailscale / ZeroTier / n2n / OpenVPN 五种方案全解 |
+| [Caddy 反向代理完全指南](tools/network/caddy-反向代理指南.md) | Caddy 入门到泛域名证书，常见自建服务反向代理模板、访问控制、日志与调试 |
+| [SSH 端口转发完全指南](tools/network/ssh-端口转发指南.md) | SSH 隧道详解：`-L` 本地转发、`-R` 远程转发、`-D` 动态代理，附带常用场景和管理命令 |
+| [Tailscale 完全指南](tools/network/tailscale-完全指南.md) | 基于 WireGuard 的零配置 VPN，安装接入、MagicDNS、Exit Node 出口节点、Subnet Router 子网路由、SSH 集成、Headscale 自建 |
+| [LLM 会话上下文与故障转移原理](tools/ai/llm-会话上下文与failover.md) | LLM 无状态本质、cc-switch failover 上下文无损原理、O(n²) 长对话性能衰减、Compaction/Prompt Cache 缓解策略 |
+| [ECC 插件 Java 开发指南](tools/dev/ecc-java开发指南.md) | Claude Code ECC 插件体系的 Java 开发用法：agents/skills/rules/commands 全览，构建修复、代码审查、TDD、安全加固工作流 |
+| [ECC Plan 命令完全指南](tools/dev/ecc-plan命令指南.md) | ECC 规划命令家族全解：/plan、/plan-prd、PRP 深度流程（/prp-prd→/prp-plan→/prp-implement）、/plan-orchestrate 桥接，含选择指南 |
+| [Vim 入门指南](tools/dev/vim-入门指南.md) | Vim 模式化编辑思想，四模式对照，高频操作速查（移动/编辑/搜索替换/分屏/宏），最小 .vimrc 配置与学习路径 |
+| [MySQL 与 PostgreSQL 分区详解](tools/system/mysql-pg分区详解.md) | 两种数据库分区全解：分区类型/建表语法、归档操作（EXCHANGE vs DETACH）、pg_partman 自动化、硬限制对比与分区裁剪优化 |
+| [Hermes 跨机器迁移指南](tools/ai/hermes-迁移指南.md) | Hermes 一键备份/恢复：`hermes backup` 备份范围与参数、SCP 加密传输、`hermes import` 恢复、迁移验证、Telegram 网关恢复、技能跨设备同步 |
+| [Hermes 完全指南](tools/ai/hermes-完全指南.md) | Hermes Agent 全解：架构与核心特性（技能/记忆/网关）、安装配置、CLI/TUI/Telegram 使用、常用命令、备份更新等维护 |
 
 ### Linux 标准与基础
 
@@ -57,7 +57,11 @@
 linux-doc/
 ├── archlinux/    ← Arch Linux 运维
 ├── btrfs/        ← Btrfs 文件系统专题
-├── tools/        ← 压缩等工具使用
+├── tools/        ← 工具指南（按主题细分为 4 个子目录）
+│   ├── dev/      ← 开发/编程（python、rust、vim、ecc）
+│   ├── ai/       ← AI 工具（llm、hermes）
+│   ├── network/  ← 网络/远程（ssh、tailscale、caddy）
+│   └── system/   ← 系统/桌面（flatpak、wine、tar-zstd）
 ├── standards/    ← Linux 标准与基础规范
 ├── README.md
 └── CLAUDE.md
