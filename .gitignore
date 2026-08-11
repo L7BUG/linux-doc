@@ -32,3 +32,6 @@ build/
 ### Mac OS ###
 .DS_Store
 settings.local.json
+
+### ECC ###
+.claude/ecc/install-state.json
