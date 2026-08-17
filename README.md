@@ -36,6 +36,7 @@
 | [Caddy 反向代理完全指南](tools/network/caddy-反向代理指南.md) | Caddy 入门到泛域名证书，常见自建服务反向代理模板、访问控制、日志与调试 |
 | [SSH 端口转发完全指南](tools/network/ssh-端口转发指南.md) | SSH 隧道详解：`-L` 本地转发、`-R` 远程转发、`-D` 动态代理，附带常用场景和管理命令 |
 | [Tailscale 完全指南](tools/network/tailscale-完全指南.md) | 基于 WireGuard 的零配置 VPN，安装接入、MagicDNS、Exit Node 出口节点、Subnet Router 子网路由、SSH 集成、Headscale 自建 |
+| [Parsec 远程桌面完全指南](tools/network/parsec-远程桌面串流指南.md) | Parsec 高性能远程串流：功能介绍、定价方案对比、全平台安装配置、网络优化、Linux 客户端设置、替代方案选型 |
 | [LLM 会话上下文与故障转移原理](tools/ai/llm-会话上下文与failover.md) | LLM 无状态本质、cc-switch failover 上下文无损原理、O(n²) 长对话性能衰减、Compaction/Prompt Cache 缓解策略 |
 | [ECC 插件 Java 开发指南](tools/dev/ecc-java开发指南.md) | Claude Code ECC 插件体系的 Java 开发用法：agents/skills/rules/commands 全览，构建修复、代码审查、TDD、安全加固工作流 |
 | [ECC Plan 命令完全指南](tools/dev/ecc-plan命令指南.md) | ECC 规划命令家族全解：/plan、/plan-prd、PRP 深度流程（/prp-prd→/prp-plan→/prp-implement）、/plan-orchestrate 桥接，含选择指南 |
