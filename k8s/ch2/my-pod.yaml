@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: my-app
+  labels:
+    app: my-app        # 标签，后面 Service 用它来找 Pod
+spec:
+  containers:
+    - name: my-app
+      image: nginx:latest
+      ports:
+        - containerPort: 80

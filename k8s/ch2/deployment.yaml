@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app              # Deployment 名字
+  labels:
+    app: my-app
+spec:
+  replicas: 3               # 要 3 个副本（Pod）
+  selector:
+    matchLabels:
+      app: my-app           # 管理哪些 Pod
+  template:
+    metadata:
+      labels:
+        app: my-app         # Pod 的标签（必须和 matchLabels 一致）
+    spec:
+      containers:
+        - name: my-app
+          image: nginx:latest
+          ports:
+            - containerPort: 80
