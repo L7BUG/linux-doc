@@ -162,9 +162,13 @@ spec:
 # 先启用 metrics-server（minikube 插件）
 minikube addons enable metrics-server
 
-# 基于 CPU 使用率自动扩缩
+# ⚠️ 前提：Deployment 必须配 resources.requests.cpu，否则 HPA 报 empty input
+# 如果你的 Deployment 没配 resources，先 patch 一下：
+kubectl patch deploy my-app -p '{"spec":{"template":{"spec":{"containers":[{"name":"my-app","resources":{"requests":{"cpu":"250m","memory":"256Mi"}}}]}}}}'
+
+# 基于 CPU 使用率自动扩缩（--cpu-percent 已弃用，用 --cpu）
 kubectl autoscale deployment my-app \
-  --cpu-percent=70 \
+  --cpu=70% \
   --min=2 \
   --max=10
 
