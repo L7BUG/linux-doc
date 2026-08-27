@@ -1,0 +1,25 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: my-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  rules:
+    - host: myapp.local          # 域名（本地用 /etc/hosts 伪造）
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: my-java-app-service    # 对应 Service 名
+                port:
+                  number: 80
+          - path: /apih2
+            pathType: Prefix
+            backend:
+              service:
+                name: my-ch2app-service
+                port:
+                  number: 80
