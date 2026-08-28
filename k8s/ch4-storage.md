@@ -158,14 +158,28 @@ spec:
 
 ### 4.1 启用 HPA
 
+#### 前提：Deployment 必须配 resources.requests.cpu
+
+```yaml
+# Deployment 里必须有这段，否则 HPA 报 empty input
+resources:
+  requests:
+    cpu: "250m"
+    memory: "256Mi"
+  limits:
+    cpu: "500m"
+    memory: "512Mi"
+```
+
+如果已有的 Deployment 没配，先 patch 补上：
+
 ```bash
-# 先启用 metrics-server（minikube 插件）
-minikube addons enable metrics-server
-
-# ⚠️ 前提：Deployment 必须配 resources.requests.cpu，否则 HPA 报 empty input
-# 如果你的 Deployment 没配 resources，先 patch 一下：
 kubectl patch deploy my-app -p '{"spec":{"template":{"spec":{"containers":[{"name":"my-app","resources":{"requests":{"cpu":"250m","memory":"256Mi"}}}]}}}}'
+```
 
+#### 方式1：命令行创建 HPA
+
+```bash
 # 基于 CPU 使用率自动扩缩（--cpu-percent 已弃用，用 --cpu）
 kubectl autoscale deployment my-app \
   --cpu=70% \
@@ -179,6 +193,68 @@ kubectl get hpa
 
 # 手动删除 HPA
 kubectl delete hpa my-app
+```
+
+#### 方式2：HPA YAML（推荐，可版本控制）
+
+```yaml
+# hpa.yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: my-app-hpa
+spec:
+  scaleTargetRef:                         # 要扩缩的目标
+    apiVersion: apps/v1
+    kind: Deployment
+    name: my-app                          # Deployment 名字
+  minReplicas: 2                          # 最少 Pod 数
+  maxReplicas: 10                         # 最多 Pod 数
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization                  # 按百分比
+        averageUtilization: 70             # CPU 使用率超 70% 扩容
+  behavior:                               # 可选：控制扩缩速度
+    scaleDown:
+      stabilizationWindowSeconds: 300      # 缩容冷却期 5 分钟（防抖动）
+      policies:
+      - type: Pods
+        value: 1                           # 每次最多缩 1 个
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0        # 扩容不等待（立即响应）
+      policies:
+      - type: Percent
+        value: 100                         # 每次最多翻倍
+        periodSeconds: 15
+```
+
+```bash
+# 部署
+kubectl apply -f hpa.yaml
+
+# 查看状态
+kubectl get hpa my-app-hpa
+
+# 模拟高负载测试（进 Pod 跑压测）
+kubectl run -it load-test --rm --image=busybox -- sh
+# 在容器里循环请求你的服务
+while true; do wget -q -O- http://my-app-service; done
+```
+
+#### 方式3：基于内存的 HPA（内存超 80% 扩容）
+
+```yaml
+metrics:
+- type: Resource
+  resource:
+    name: memory
+    target:
+      type: Utilization
+      averageUtilization: 80
 ```
 
 ### 4.2 手动扩缩（不用 HPA）
