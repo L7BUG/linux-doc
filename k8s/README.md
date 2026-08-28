@@ -59,3 +59,34 @@ Helm 是什么（K8s 的 apt）→ Chart 结构 → 一键部署完整应用 →
 - kubectl 命令参考：https://kubernetes.io/docs/reference/kubectl/cheatsheet/
 - killerCoda 在线实验：https://killercoda.com/
 - Helm 官方文档：https://helm.sh/zh/docs/
+
+---
+
+## 环境搭建速查
+
+### 安装工具
+
+```bash
+sudo pacman -S kubectl helm     # K8s 命令行 + Helm 包管理器
+yay -S minikube                  # 单机 K8s 集群
+```
+
+### 启用插件
+
+| 插件 | 用途 | 启用命令 |
+|---|---|---|
+| **ingress** | Ingress 域名路由（Nginx 反向代理） | `minikube addons enable ingress` |
+| **headlamp** | Web 控制台（替代已弃用的 Dashboard） | `minikube addons enable headlamp` |
+| **metrics-server** | HPA 自动扩缩（收集 CPU/内存指标） | `minikube addons enable metrics-server` |
+| **storage-provisioner** | 动态持久化存储（PVC 自动分配） | `minikube addons enable storage-provisioner` |
+
+> `storage-provisioner` minikube 默认已启用，其他 3 个需要手动开。
+
+### 一键启用全部插件
+
+```bash
+minikube addons enable ingress
+minikube addons enable headlamp
+minikube addons enable metrics-server
+minikube addons enable storage-provisioner
+```
