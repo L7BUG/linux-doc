@@ -152,6 +152,149 @@ auth-service（独立部署）
 
 > **Auth Service 是前置网关层，业务服务是后端逻辑层，职责完全分离。**
 
+### 公开接口（不需要认证）
+
+**问题：** 并非所有接口都需要认证——登录、注册、健康检查等公开接口不应走 auth-url。
+
+**方案：多个 Ingress 分离（推荐，最清晰）**
+
+```
+公开接口 Ingress（无 auth-url）     业务接口 Ingress（有 auth-url）
+├── /api/public/login              ├── /api/users/**
+├── /api/public/register           ├── /api/orders/**
+├── /health                        ├── /api/products/**
+└── 直接放行，不验证 Token         └── 先调 Auth Service → 通过才放行
+```
+
+**K8s 配置：**
+
+```yaml
+---
+# 公开接口 Ingress（不配 auth-url，直接放行）
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: public-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: api.example.com
+    http:
+      paths:
+      - path: /api/public
+        pathType: Prefix
+        backend:
+          service:
+            name: user-service
+            port:
+              number: 8080
+---
+# 业务接口 Ingress（配 auth-url，必须认证）
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: protected-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/auth-url: "http://auth-service.default.svc.cluster.local:8080/auth/validate"
+    nginx.ingress.kubernetes.io/auth-response-headers: "X-User-Id, X-User-Name, X-User-Roles, X-User-Permissions"
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: api.example.com
+    http:
+      paths:
+      - path: /api/users
+        pathType: Prefix
+        backend:
+          service:
+            name: user-service
+            port:
+              number: 8080
+      - path: /api/orders
+        pathType: Prefix
+        backend:
+          service:
+            name: order-service
+            port:
+              number: 8081
+```
+
+**方案对比：**
+
+| 方案 | 优点 | 缺点 | 推荐度 |
+|---|---|---|---|
+| **多个 Ingress 分离**（推荐） | 清晰直观，职责分离 | Ingress 文件多一点 | ⭐⭐⭐⭐⭐ |
+| configuration-snippet 动态控制 | 一个 Ingress 搞定 | Nginx snippet 维护复杂，不易读 | ⭐⭐ |
+| Auth Service 内部判断 | 灵活 | Auth Service 要知道所有公开路径，耦合重 | ⭐⭐ |
+
+**Spring Boot 侧的处理：**
+
+```java
+// UserContextInterceptor 里：公开接口不校验 UserContext
+@Override
+public boolean preHandle(HttpServletRequest request,
+                         HttpServletResponse response,
+                         Object handler) {
+    String userId = request.getHeader("X-User-Id");
+
+    // 公开接口（Ingress 没走 auth-url）：没有 X-User-Id 头，不强制校验
+    if (!StringUtils.hasText(userId)) {
+        // 检查是否是公开接口（路径白名单）
+        if (isPublicEndpoint(request.getRequestURI())) {
+            return true; // 放行，UserContext 不设置
+        }
+        // 业务接口缺少头 → Ingress 配置有误
+        log.warn("请求缺少 X-User-Id 头，路径: {}", request.getRequestURI());
+        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+        return false;
+    }
+
+    // 业务接口：正常设置 UserContext
+    UserContext.set(new UserContext.UserInfo(userId, ...));
+    return true;
+}
+
+// 公开接口白名单
+private boolean isPublicEndpoint(String uri) {
+    return uri.startsWith("/api/public/")
+        || uri.equals("/health")
+        || uri.equals("/actuator/health");
+}
+```
+
+> ⚠️ 关键原则：**公开接口 Ingress 不配 auth-url → 不会返回 X-User-Id 头 → 拦截器检测到无头 → 判断是否公开路径 → 放行或拒绝。**
+
+### Auth Service 内部路由判断（进阶方案）
+
+如果不想拆多个 Ingress，可以让 Auth Service 内部判断：
+
+```java
+@GetMapping("/validate")
+public ResponseEntity<Void> validate(
+        @RequestHeader("Authorization") String authorization,
+        @RequestHeader("X-Original-URI") String originalUri) {
+
+    // 公开路径：直接放行（不验证 Token）
+    if (isPublicPath(originalUri)) {
+        return ResponseEntity.ok().build();
+    }
+
+    // 业务路径：验证 JWT
+    String token = authorization.replace("Bearer ", "");
+    Jwt jwt = jwtDecoder.decode(token);
+    // ... 提取用户信息写头
+}
+
+private boolean isPublicPath(String uri) {
+    return uri.startsWith("/api/public/")
+        || uri.equals("/health");
+}
+```
+
+> ⚠️ 此方案的缺点：Auth Service 需要知道所有公开路径，业务服务改路由时 Auth Service 也要同步更新——**两个服务耦合**。多个 Ingress 方案没有这个问题。
+
 ---
 
 ## 一、实施范围
