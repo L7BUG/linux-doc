@@ -79,7 +79,8 @@ kubectl get nodes
 ### 4.3 常用命令速查
 
 ```bash
-minikube dashboard     # 打开 Web 控制台
+minikube addons enable headlamp    # 启用 Headlamp（替代已弃用的 Dashboard）
+minikube service headlamp -n headlamp --url  # 打开 Web 控制台
 minikube status        # 集群状态
 minikube stop          # 停止集群
 minikube delete        # 删除集群（重建用）

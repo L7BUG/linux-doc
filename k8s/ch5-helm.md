@@ -74,48 +74,209 @@ kubectl run mysql-client --rm -it --image=mysql -- mysql -h my-mysql -p
 helm create my-java-app
 tree my-java-app/
 # my-java-app/
-# ├── Chart.yaml          # Chart 元信息
-# ├── values.yaml         # 默认配置值
-# ├── templates/          # YAML 模板
+# ├── Chart.yaml          # Chart 元信息（版本、描述）
+# ├── values.yaml         # 默认配置值（你在这里改参数）
+# ├── templates/          # YAML 模板（用 Go template 语法）
 # │   ├── deployment.yaml
 # │   ├── service.yaml
 # │   ├── ingress.yaml
+# │   ├── _helpers.tpl    # 模板函数（helm create 自动生成，不用管）
 # │   └── ...
 # └── README.md
 ```
 
-### 2.2 修改 templates/deployment.yaml
+### 2.2 三个文件分别怎么写
+
+---
+
+#### 📄 Chart.yaml（Chart 的身份证）
+
+```yaml
+apiVersion: v2              # Helm 3 固定 v2
+name: my-java-app           # Chart 名字
+description: My Java application on K8s
+type: application           # application 或 library
+version: 0.1.0              # Chart 版本（你自己的）
+appVersion: "1.0.0"         # 应用版本
+```
+
+> 这个文件基本不用改，`helm create` 已经生成好了。
+
+---
+
+#### 📄 values.yaml（你的配置面板）
+
+**这是你最常改的文件。** 所有可配置的参数都在这里定义默认值。
+
+```yaml
+# 副本数
+replicaCount: 2
+
+# 镜像配置
+image:
+  repository: yourname/my-java-app
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+# 容器端口
+containerPort: 8080
+
+# 环境变量
+env:
+  profiles: "production"
+
+# Service 配置
+service:
+  type: NodePort
+  port: 80
+  nodePort: 30080
+
+# 资源限制
+resources:
+  requests:
+    memory: "256Mi"
+    cpu: "250m"
+  limits:
+    memory: "512Mi"
+    cpu: "500m"
+
+# Ingress 配置
+ingress:
+  enabled: true
+  host: myapp.local
+```
+
+**怎么用？** 两种方式覆盖默认值：
+
+```bash
+# 方式1：命令行 --set
+helm install my-app ./my-java-app --set replicaCount=5 --set image.tag=v2.0
+
+# 方式2：写自己的 values 文件
+helm install my-app ./my-java-app -f my-values.yaml
+```
+
+---
+
+#### 📄 templates/ 目录（YAML 模板语法）
+
+**这是 Helm 的核心——用 Go template 语法让 YAML 动态化。**
+
+### 2.3 Go Template 语法速查
+
+| 语法 | 含义 | 例子 |
+|---|---|---|
+| `{{ .Values.xxx }}` | 读 values.yaml 的值 | `{{ .Values.replicaCount }}` → `2` |
+| `{{ .Chart.Name }}` | 读 Chart.yaml 的值 | `{{ .Chart.Name }}` → `my-java-app` |
+| `{{ .Release.Name }}` | 当前 Release 名 | `helm install my-app` → `my-app` |
+| `{{ include "xxx" . }}` | 调用 _helpers.tpl 里的模板 | `{{ include "my-java-app.fullname" . }}` |
+| `{{- if .Values.xxx }}` | 条件判断 | 条件为 true 才渲染下面内容 |
+| `{{- range .Values.xxx }}` | 循环遍历列表 | 遍历环境变量列表 |
+| `\| nindent N` | 缩进 N 个空格 | YAML 必须缩进对齐 |
+| `\| toYaml` | 把对象转成 YAML | 渲染 resources 整块 |
+
+### 2.4 从零写 templates/deployment.yaml
 
 ```yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "my-java-app.fullname" . }}
+  name: {{ .Release.Name }}                    # Release 名作为 Deployment 名
   labels:
-    {{- include "my-java-app.labels" . | nindent 4 }}
+    app: {{ .Release.Name }}
 spec:
-  replicas: {{ .Values.replicaCount }}
+  replicas: {{ .Values.replicaCount }}          # 读 values.yaml 的 replicaCount
   selector:
     matchLabels:
-      {{- include "my-java-app.selectorLabels" . | nindent 6 }}
+      app: {{ .Release.Name }}
   template:
     metadata:
       labels:
-        {{- include "my-java-app.selectorLabels" . | nindent 8 }}
+        app: {{ .Release.Name }}
     spec:
       containers:
-      - name: {{ .Chart.Name }}
+      - name: {{ .Chart.Name }}                # Chart 名作为容器名
         image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
         ports:
         - containerPort: {{ .Values.containerPort }}
         env:
         - name: SPRING_PROFILES_ACTIVE
           value: {{ .Values.env.profiles }}
-        resources:
+        resources:                              # 直接渲染整块 resources
           {{- toYaml .Values.resources | nindent 10 }}
 ```
 
-### 2.3 修改 values.yaml
+### 2.5 从零写 templates/service.yaml
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-svc
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    app: {{ .Release.Name }}
+  ports:
+  - port: {{ .Values.service.port }}
+    targetPort: {{ .Values.containerPort }}
+    {{- if eq .Values.service.type "NodePort" }}
+    nodePort: {{ .Values.service.nodePort }}   # 只有 NodePort 类型才渲染这行
+    {{- end }}
+```
+
+### 2.6 条件渲染（if/else）
+
+```yaml
+{{- if .Values.ingress.enabled }}              # 只有 ingress.enabled=true 才渲染
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Release.Name }}-ingress
+spec:
+  rules:
+  - host: {{ .Values.ingress.host }}
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ .Release.Name }}-svc
+            port:
+              number: {{ .Values.service.port }}
+{{- end }}
+```
+
+### 2.7 循环渲染（range）
+
+```yaml
+# values.yaml 里：
+env:
+  DB_HOST: "192.168.1.100"
+  DB_PORT: "5432"
+
+# templates 里：
+spec:
+  containers:
+  - env:
+    {{- range $key, $value := .Values.env }}
+    - name: {{ $key }}
+      value: "{{ $value }}"
+    {{- end }}
+```
+
+渲染结果：
+```yaml
+    - name: DB_HOST
+      value: "192.168.1.100"
+    - name: DB_PORT
+      value: "5432"
+```
+
+---
+
+### 2.8 修改 values.yaml（你的配置）
 
 ```yaml
 replicaCount: 2
@@ -132,6 +293,7 @@ env:
 service:
   type: NodePort
   port: 80
+  nodePort: 30080
 
 resources:
   requests:
@@ -140,6 +302,10 @@ resources:
   limits:
     memory: "512Mi"
     cpu: "500m"
+
+ingress:
+  enabled: true
+  host: myapp.local
 ```
 
 ### 2.4 部署自己的 Chart
