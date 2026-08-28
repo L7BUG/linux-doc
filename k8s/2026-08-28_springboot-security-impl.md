@@ -1,208 +1,300 @@
-# Spring Boot 微服务安全架构实施计划
+# 微服务联调测试 —— 简化计划
 
-> 📅 2026-08-28
-> 🎯 实现需求：ThreadLocal 用户上下文 + AOP 权限校验 + @HttpExchange 服务间调用
-> 📝 基于 email-parent 项目现有架构（COLA 4层 + Spring Boot 4.0.6 + Java 25）
+> 🎯 3 个轻量 Spring Boot 服务，纯内存数据，零中间件，验证 Ingress auth-url + @HttpExchange 全链路
+> 📝 基于你之前的需求文档
 
 ---
 
-## 〇、认证服务（Auth Service）—— 整个架构的入口
-
-> ⚠️ 这是独立于业务服务的**前置认证服务**，Nginx Ingress 通过 `auth-url` 调用它。验证通过后才放行请求到下游业务服务。
-
-### 架构位置
+## 一、架构图
 
 ```
-用户请求 → Nginx Ingress → auth-url → Auth Service（验证 JWT）
-                                         ↓ 验证通过
-                                   透传 X-User-* 头 → 业务服务
-                                         ↓ 验证失败
-                                   Ingress 直接返回 401/403
+用户 → Nginx Ingress ──auth-url──→ Auth Service (8080)
+                    │                     │ 验证 Token → 返回 X-User-* 头
+                    │                     ↓
+                    ├──/api/public/**──→ 直接放行（不走 Auth）
+                    └──/api/**──────→ User Service (8081)
+                                      └── @HttpExchange ──→ Order Service (8082)
+                                            （自动透传用户信息）
 ```
 
-### Auth Service 职责
+## 二、服务清单
 
-| 职责 | 说明 |
+| 服务 | 端口 | 用途 | 数据来源 |
+|---|---|---|---|
+| **auth-service** | 8080 | JWT 验证 + 透传用户头 | 硬编码（内存模拟） |
+| **user-service** | 8081 | 用户业务 + AOP 权限 + OrderClient 调用 | 硬编码（内存模拟） |
+| **order-service** | 8082 | 订单业务（被 User 调用） | 硬编码（内存模拟） |
+
+**三个服务都不连数据库、不连 Redis、不连 MQ。**
+
+## 三、技术栈
+
+| 项 | 选型 |
 |---|---|
-| JWT 验证 | 校验签名、过期时间、Issuer |
-| 用户信息提取 | 从 Token Claims 提取 userId/roles/permissions |
-| 身份透传 | 将用户信息写入响应头（Ingress 自动透传给下游） |
-| 快速失败 | 无效 Token 直接返回 401，Ingress 拒绝请求 |
+| 框架 | Spring Boot 3.3.x + Java 17+ |
+| HTTP 客户端 | RestClient + @HttpExchange（**不用 OpenFeign**） |
+| 权限校验 | 自定义注解 + AOP |
+| 依赖 | spring-boot-starter-web + spring-boot-starter-aop |
+| 构建 | Maven multi-module（父 POM + 3 个子模块） |
 
-### Ingress 配置示例
-
-```yaml
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: my-service-ingress
-  annotations:
-    # 认证服务地址（Ingress 先调它，通过才放行）
-    nginx.ingress.kubernetes.io/auth-url: "http://auth-service.default.svc.cluster.local:8080/auth/validate"
-    # 透传哪些响应头给下游业务服务
-    nginx.ingress.kubernetes.io/auth-response-headers: "X-User-Id, X-User-Name, X-User-Roles, X-User-Permissions"
-spec:
-  rules:
-  - host: api.example.com
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: user-service
-            port:
-              number: 8080
-```
-
-### Auth Service 接口设计
+## 四、项目结构
 
 ```
-GET /auth/validate
-  请求头：Authorization: Bearer eyJhbG...
-  ↓
-  验证 JWT → 提取 Claims
-  ↓
-  成功：返回 200 + 响应头
-    X-User-Id: u001
-    X-User-Name: 张三
-    X-User-Roles: admin,user
-    X-User-Permissions: order:query,order:create
-  ↓
-  失败：返回 401（Ingress 拒绝请求，用户看到 401）
+microservice-demo/
+├── pom.xml                          ← 父 POM（统一版本管理）
+├── auth-service/
+│   ├── pom.xml
+│   └── src/main/java/.../auth/
+│       ├── controller/AuthController.java    ← GET /auth/validate
+│       └── service/JwtService.java           ← 硬编码 Token 验证
+├── user-service/
+│   ├── pom.xml
+│   └── src/main/java/.../user/
+│       ├── context/UserContext.java          ← ThreadLocal
+│       ├── context/UserContextInterceptor.java ← 拦截器
+│       ├── context/WebConfig.java            ← 拦截器注册
+│       ├── annotation/RequirePermission.java ← 权限注解
+│       ├── aspect/PermissionAspect.java      ← AOP 切面
+│       ├── http/AuthClientHttpRequestInterceptor.java ← RestClient 拦截器（透传 Token）
+│       ├── http/exchange/OrderClient.java    ← @HttpExchange 接口
+│       ├── config/HttpClientConfig.java      ← RestClient + Proxy 生成
+│       ├── controller/UserController.java    ← 业务 Controller
+│       └── model/UserDto.java               ← 用户 DTO
+├── order-service/
+│   ├── pom.xml
+│   └── src/main/java/.../order/
+│       ├── controller/OrderController.java   ← 订单 Controller
+│       └── model/OrderDto.java               ← 订单 DTO
 ```
 
-### Auth Service 技术选型
+## 五、核心实现细节
 
-| 方案 | 推荐度 | 说明 |
-|---|---|---|
-| **独立 Spring Boot 服务** | ⭐⭐⭐⭐⭐ | 职责单一，可独立扩缩容 |
-| 内嵌到业务服务 | ⭐⭐ | 违反微服务原则，不推荐 |
-
-### Auth Service 实现要点
+### 5.1 Auth Service（8080）
 
 ```java
-@RestController
-@RequestMapping("/auth")
-public class AuthController {
+// 硬编码 Token 验证，不连任何中间件
+@Service
+public class JwtService {
+    // 硬编码用户数据库
+    private static final Map<String, Map<String, Object>> USERS = Map.of(
+        "token-admin-001", Map.of("id", "1001", "name", "张三", "roles", "ROLE_ADMIN,ROLE_USER", "permissions", "user:read,user:write,order:read,order:write"),
+        "token-user-002",  Map.of("id", "1002", "name", "李四", "roles", "ROLE_USER",        "permissions", "user:read,order:read")
+    );
 
-    private final JwtDecoder jwtDecoder;  // Nimbus JOSE 或 Spring Security JWT
-
-    @GetMapping("/validate")
-    public ResponseEntity<Void> validate(
-            @RequestHeader("Authorization") String authorization) {
-
-        // 1. 提取 Token
-        String token = authorization.replace("Bearer ", "");
-
-        // 2. 验证 JWT（签名 + 过期 + Claims）
-        try {
-            Jwt jwt = jwtDecoder.decode(token);
-
-            // 3. 提取用户信息
-            String userId = jwt.getClaimAsString("sub");
-            List<String> roles = jwt.getClaimAsStringList("roles");
-            List<String> permissions = jwt.getClaimAsStringList("permissions");
-
-            // 4. 写入响应头（Ingress 透传给下游）
-            return ResponseEntity.ok()
-                .header("X-User-Id", userId)
-                .header("X-User-Name", jwt.getClaimAsString("name"))
-                .header("X-User-Roles", String.join(",", roles))
-                .header("X-User-Permissions", String.join(",", permissions))
-                .build();
-
-        } catch (Exception e) {
-            // 5. 验证失败 → 401
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
+    public Map<String, String> validate(String token) {
+        if (token == null || token.isBlank()) return null;
+        Map<String, Object> user = USERS.get(token);
+        if (user == null) return null;
+        // 返回用户信息（Ingress 透传给下游）
+        return Map.of(
+            "X-User-Id", (String) user.get("id"),
+            "X-User-Name", (String) user.get("name"),
+            "X-User-Roles", (String) user.get("roles"),
+            "X-User-Permissions", (String) user.get("permissions")
+        );
     }
 }
 ```
 
-### Auth Service 的 COLA 架构分层
+```java
+// GET /auth/validate —— Ingress auth-url 调用的接口
+@RestController
+public class AuthController {
+    @Autowired private JwtService jwtService;
 
-```
-auth-service/                          ← 独立 Spring Boot 项目
-├── auth-domain/
-│   └── JwtValidator.java              ← JWT 验证逻辑（核心业务）
-├── auth-adapter/
-│   └── AuthController.java            ← /auth/validate 接口
-├── auth-app/
-│   └── AuthApplication.java           ← 启动类
-├── auth-infrastructure/
-│   └── JwtDecoderConfig.java          ← JWT 解码器配置（公钥/密钥）
-└── start/
-    └── pom.xml
-```
-
-### Auth Service 与业务服务的关系
-
-```
-auth-service（独立部署）
-  ├── 验证 JWT Token
-  ├── 提取用户信息
-  └── 返回 X-User-* 头
-
-业务服务（user-service / order-service 等）
-  ├── UserContextInterceptor（从头提取 → UserContext）
-  ├── AOP 权限校验（@RequirePermission）
-  └── @HttpExchange 透传身份
+    @GetMapping("/auth/validate")
+    public ResponseEntity<Void> validate(
+            @RequestHeader(value = "Authorization", required = false) String auth,
+            HttpServletResponse response) {
+        if (auth == null || !auth.startsWith("Bearer ")) {
+            return ResponseEntity.status(401).build();
+        }
+        String token = auth.substring(7);
+        Map<String, String> headers = jwtService.validate(token);
+        if (headers == null) {
+            return ResponseEntity.status(401).build();
+        }
+        // 把用户信息写入响应头（Ingress 会透传给下游）
+        headers.forEach(response::setHeader);
+        return ResponseEntity.ok().build();
+    }
+}
 ```
 
-> **Auth Service 是前置网关层，业务服务是后端逻辑层，职责完全分离。**
+### 5.2 User Service（8081）—— 核心链路
 
-### 公开接口（不需要认证）
+```java
+// UserContext —— ThreadLocal 存储当前用户
+public class UserContext {
+    private static final ThreadLocal<UserInfo> HOLDER = new ThreadLocal<>();
+    public static void set(UserInfo info) { HOLDER.set(info); }
+    public static UserInfo get() { return HOLDER.get(); }
+    public static void clear() { HOLDER.remove(); }
 
-**问题：** 并非所有接口都需要认证——登录、注册、健康检查等公开接口不应走 auth-url。
-
-**方案：多个 Ingress 分离（推荐，最清晰）**
-
-```
-公开接口 Ingress（无 auth-url）     业务接口 Ingress（有 auth-url）
-├── /api/public/login              ├── /api/users/**
-├── /api/public/register           ├── /api/orders/**
-├── /health                        ├── /api/products/**
-└── 直接放行，不验证 Token         └── 先调 Auth Service → 通过才放行
+    public record UserInfo(String userId, String userName, List<String> roles, List<String> permissions, String token) {}
+}
 ```
 
-**K8s 配置：**
+```java
+// 拦截器 —— 从 Ingress 透传的 X-User-* 头提取用户信息
+@Component
+public class UserContextInterceptor implements HandlerInterceptor {
+    @Override
+    public boolean preHandle(HttpServletRequest req, HttpServletResponse res, Object handler) {
+        String userId = req.getHeader("X-User-Id");
+        if (userId != null) {
+            UserContext.set(new UserContext.UserInfo(
+                userId,
+                req.getHeader("X-User-Name"),
+                List.of(req.getHeader("X-User-Roles").split(",")),
+                List.of(req.getHeader("X-User-Permissions").split(",")),
+                req.getHeader("Authorization")
+            ));
+        }
+        return true;
+    }
+    @Override
+    public void afterCompletion(HttpServletRequest req, HttpServletResponse res, Object handler, Exception ex) {
+        UserContext.clear();
+    }
+}
+```
 
+```java
+// @RequirePermission 注解
+@Target(ElementType.METHOD)
+@Retention(RetentionPolicy.RUNTIME)
+public @interface RequirePermission { String value(); }
+```
+
+```java
+// AOP 切面 —— 校验权限
+@Aspect @Component
+public class PermissionAspect {
+    @Around("@annotation(requirePermission)")
+    public Object check(ProceedingJoinPoint joinPoint, RequirePermission requirePermission) throws Throwable {
+        UserContext.UserInfo user = UserContext.get();
+        if (user == null || user.permissions() == null || !user.permissions().contains(requirePermission.value())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "无权限: " + requirePermission.value());
+        }
+        return joinPoint.proceed();
+    }
+}
+```
+
+```java
+// @HttpExchange —— 声明式 Order 服务客户端
+@HttpExchange
+public interface OrderClient {
+    @GetExchange("/api/orders/{id}")
+    OrderDto getOrder(@PathVariable String id);
+
+    @GetExchange("/api/orders/user/{userId}")
+    List<OrderDto> getOrdersByUser(@PathVariable String userId);
+}
+```
+
+```java
+// RestClient 拦截器 —— 自动透传用户信息到下游
+@Component
+public class AuthClientHttpRequestInterceptor implements ClientHttpRequestInterceptor {
+    @Override
+    public ClientHttpResponse intercept(HttpRequest req, byte[] body, ClientHttpRequestExecution exec) {
+        UserContext.UserInfo user = UserContext.get();
+        if (user != null) {
+            req.getHeaders().set("Authorization", user.token());
+            req.getHeaders().set("X-User-Id", user.userId());
+            req.getHeaders().set("X-User-Name", user.userName());
+            req.getHeaders().set("X-User-Roles", String.join(",", user.roles()));
+            req.getHeaders().set("X-User-Permissions", String.join(",", user.permissions()));
+        }
+        return exec.execute(req, body);
+    }
+}
+```
+
+```java
+// UserController —— 业务示例
+@RestController
+@RequestMapping("/api/users")
+public class UserController {
+    @Autowired private OrderClient orderClient;
+
+    // 公开接口（不需认证）
+    @GetMapping("/public/health")
+    public Map<String, String> health() { return Map.of("status", "ok"); }
+
+    // 需要 user:read 权限
+    @GetMapping("/{id}")
+    @RequirePermission("user:read")
+    public UserDto getUser(@PathVariable String id) {
+        return new UserDto(id, "用户" + id, "active");
+    }
+
+    // 需要 user:read 权限 + 调用 Order 服务
+    @GetMapping("/{id}/orders")
+    @RequirePermission("user:read")
+    public List<OrderDto> getUserOrders(@PathVariable String id) {
+        return orderClient.getOrdersByUser(id);  // 自动透传 Token
+    }
+
+    // 需要 user:write 权限
+    @PostMapping
+    @RequirePermission("user:write")
+    public UserDto createUser(@RequestBody UserDto user) {
+        return user;
+    }
+}
+```
+
+## 六、测试场景
+
+### 场景 1：公开接口（不走 Auth）
+```bash
+curl http://localhost:8081/api/users/public/health
+# → {"status": "ok"}  ✅ 不需要认证
+```
+
+### 场景 2：需要认证 + 权限校验通过
+```bash
+# 先模拟 Ingress 的行为：调 Auth 验证 Token，拿到用户头
+curl -v http://localhost:8080/auth/validate -H "Authorization: Bearer token-admin-001"
+# → 返回 X-User-Id: 1001, X-User-Roles: ROLE_ADMIN ...
+
+# 用这个 Token 访问 User 服务（需要 user:read 权限）
+curl http://localhost:8081/api/users/1001 -H "Authorization: Bearer token-admin-001"
+# → {"id":"1001","name":"用户1001","status":"active"}  ✅
+```
+
+### 场景 3：权限不足（403）
+```bash
+# user-002 只有 user:read,order:read，没有 user:write
+curl -X POST http://localhost:8081/api/users -H "Authorization: Bearer token-user-002" -d '{"id":"1003","name":"new"}'
+# → 403 Forbidden: 无权限: user:write  ✅
+```
+
+### 场景 4：服务间调用（自动透传）
+```bash
+# user:1001 的订单（User → Order）
+curl http://localhost:8081/api/users/1001/orders -H "Authorization: Bearer token-admin-001"
+# → [{"orderId":"ORD-001","userId":"1001","product":"组件","amount":100}]
+# Order 服务收到的请求头里有 X-User-Id: 1001  ✅
+```
+
+### 场景 5：Minikube + Ingress 完整链路
 ```yaml
----
-# 公开接口 Ingress（不配 auth-url，直接放行）
+# ingress.yaml
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: public-ingress
+  name: user-ingress
   annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /
-spec:
-  ingressClassName: nginx
-  rules:
-  - host: api.example.com
-    http:
-      paths:
-      - path: /api/public
-        pathType: Prefix
-        backend:
-          service:
-            name: user-service
-            port:
-              number: 8080
----
-# 业务接口 Ingress（配 auth-url，必须认证）
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: protected-ingress
-  annotations:
-    nginx.ingress.kubernetes.io/auth-url: "http://auth-service.default.svc.cluster.local:8080/auth/validate"
+    nginx.ingress.kubernetes.io/auth-url: "http://auth-service:8080/auth/validate"
     nginx.ingress.kubernetes.io/auth-response-headers: "X-User-Id, X-User-Name, X-User-Roles, X-User-Permissions"
 spec:
   ingressClassName: nginx
   rules:
-  - host: api.example.com
+  - host: test.local
     http:
       paths:
       - path: /api/users
@@ -211,248 +303,60 @@ spec:
           service:
             name: user-service
             port:
-              number: 8080
-      - path: /api/orders
-        pathType: Prefix
-        backend:
-          service:
-            name: order-service
-            port:
               number: 8081
 ```
 
-**方案对比：**
-
-| 方案 | 优点 | 缺点 | 推荐度 |
-|---|---|---|---|
-| **多个 Ingress 分离**（推荐） | 清晰直观，职责分离 | Ingress 文件多一点 | ⭐⭐⭐⭐⭐ |
-| configuration-snippet 动态控制 | 一个 Ingress 搞定 | Nginx snippet 维护复杂，不易读 | ⭐⭐ |
-| Auth Service 内部判断 | 灵活 | Auth Service 要知道所有公开路径，耦合重 | ⭐⭐ |
-
-**Spring Boot 侧的处理：**
-
-```java
-// UserContextInterceptor 里：公开接口不校验 UserContext
-@Override
-public boolean preHandle(HttpServletRequest request,
-                         HttpServletResponse response,
-                         Object handler) {
-    String userId = request.getHeader("X-User-Id");
-
-    // 公开接口（Ingress 没走 auth-url）：没有 X-User-Id 头，不强制校验
-    if (!StringUtils.hasText(userId)) {
-        // 检查是否是公开接口（路径白名单）
-        if (isPublicEndpoint(request.getRequestURI())) {
-            return true; // 放行，UserContext 不设置
-        }
-        // 业务接口缺少头 → Ingress 配置有误
-        log.warn("请求缺少 X-User-Id 头，路径: {}", request.getRequestURI());
-        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-        return false;
-    }
-
-    // 业务接口：正常设置 UserContext
-    UserContext.set(new UserContext.UserInfo(userId, ...));
-    return true;
-}
-
-// 公开接口白名单
-private boolean isPublicEndpoint(String uri) {
-    return uri.startsWith("/api/public/")
-        || uri.equals("/health")
-        || uri.equals("/actuator/health");
-}
+```bash
+# 直接访问 Ingress（不手动传 Token 头）
+curl -H "Authorization: Bearer token-admin-001" http://test.local/api/users/1001
+# → Auth Service 验证 → 透传 X-User-* → User Service → 403 ❌ 因为没有通过 Ingress
 ```
 
-> ⚠️ 关键原则：**公开接口 Ingress 不配 auth-url → 不会返回 X-User-Id 头 → 拦截器检测到无头 → 判断是否公开路径 → 放行或拒绝。**
+## 七、实施步骤
 
-### Auth Service 内部路由判断（进阶方案）
-
-如果不想拆多个 Ingress，可以让 Auth Service 内部判断：
-
-```java
-@GetMapping("/validate")
-public ResponseEntity<Void> validate(
-        @RequestHeader("Authorization") String authorization,
-        @RequestHeader("X-Original-URI") String originalUri) {
-
-    // 公开路径：直接放行（不验证 Token）
-    if (isPublicPath(originalUri)) {
-        return ResponseEntity.ok().build();
-    }
-
-    // 业务路径：验证 JWT
-    String token = authorization.replace("Bearer ", "");
-    Jwt jwt = jwtDecoder.decode(token);
-    // ... 提取用户信息写头
-}
-
-private boolean isPublicPath(String uri) {
-    return uri.startsWith("/api/public/")
-        || uri.equals("/health");
-}
-```
-
-> ⚠️ 此方案的缺点：Auth Service 需要知道所有公开路径，业务服务改路由时 Auth Service 也要同步更新——**两个服务耦合**。多个 Ingress 方案没有这个问题。
-
----
-
-## 一、实施范围
-
-用户需求文档 10 个模块 + Auth Service，在 email-parent COLA 架构下的实现分工：
-
-| 模块 | 归属层 | 说明 |
+| 步骤 | 内容 | 时间 |
 |---|---|---|
-| **0. Auth Service（独立项目）** | **独立** | **JWT 验证 + 身份透传（Ingress auth-url）** |
-| 1. UserContext | email-domain（共享） | ThreadLocal 工具类 + UserInfo record |
-| 2. UserContextInterceptor | email-adapter | HandlerInterceptor |
-| 3. WebConfig | email-adapter | 拦截器注册 |
-| 4. RequirePermission 注解 | email-domain（共享） | 自定义注解 |
-| 5. PermissionAspect | email-app | AOP 切面 |
-| 6. AuthClientHttpRequestInterceptor | email-domain（共享） | RestClient 拦截器 |
-| 7. OrderClient | email-domain（共享） | @HttpExchange 接口 |
-| 8. HttpClientConfig | email-app | 代理 Bean 配置 |
-| 9. 示例 Controller | email-adapter | 演示用法 |
-| 10. pom.xml 依赖 | start 模块 | spring-boot-starter-aop |
+| 1 | 创建父 POM + 3 个子模块骨架 | 10min |
+| 2 | Auth Service：AuthController + JwtService | 15min |
+| 3 | Order Service：OrderController（硬编码数据） | 10min |
+| 4 | User Service：UserContext + 拦截器 + WebConfig | 15min |
+| 5 | User Service：@RequirePermission + PermissionAspect | 10min |
+| 6 | User Service：@HttpExchange + RestClient 拦截器 + HttpClientConfig | 20min |
+| 7 | User Service：UserController（完整业务示例） | 15min |
+| 8 | 测试验证（curl 5 个场景） | 15min |
+| 9 | Minikube 部署测试（kubectl apply + Ingress） | 30min |
 
----
+**总计约 2.5 小时**
 
-## 二、实施步骤（8 步）
-
-### Step 0：Auth Service（独立项目）
-**目录：** `auth-service/`（独立 COLA 项目，和 email-parent 平级）
-- auth-domain：JwtValidator（JWT 验证逻辑）
-- auth-adapter：AuthController（GET /auth/validate）
-- auth-infrastructure：JwtDecoderConfig（JWT 解码器配置）
-- auth-app：启动类
-- start/pom.xml：依赖（spring-boot-starter-web + nimbus-jose-jwt）
-- **测试**：AuthControllerTest（MockMvc 验证 200/401）
-
-### Step 1：添加 AOP 依赖
-**文件：** `start/pom.xml`
-- 加 `spring-boot-starter-aop` 依赖
-- 验证：`mvn compile` 通过
-
-### Step 2：UserContext（ThreadLocal）
-**文件（新建）：** `email-domain/src/main/java/.../auth/context/UserContext.java`
-- UserInfo record（userId/userName/roles/permissions/token）
-- ThreadLocal 持有 UserInfo
-- set/get/getOrNull/clear/便捷静态方法
-- 无外部依赖，纯 Java
-
-### Step 3：拦截器 + WebConfig
-**文件（新建）：**
-- `email-adapter/src/main/java/.../auth/interceptor/UserContextInterceptor.java`
-- `email-adapter/src/main/java/.../auth/config/WebConfig.java`
-- 拦截所有路径（排除 /health /actuator）
-- preHandle 提取 X-User-* 头 → UserContext.set()
-- afterCompletion → UserContext.clear()
-- **注意**：email-parent 有 `/api` 前缀（`spring.mvc.servlet.path=/api`），拦截器 addPathPatterns("/**")
-
-### Step 4：权限注解 + AOP 切面
-**文件（新建）：**
-- `email-domain/src/main/java/.../auth/annotation/RequirePermission.java`
-- `email-app/src/main/java/.../auth/aspect/PermissionAspect.java`
-- @Around 环绕通知 + UserContext.getOrNull() + 权限检查 + AccessDeniedException
-
-### Step 5：RestClient 拦截器 + @HttpExchange
-**文件（新建）：**
-- `email-domain/src/main/java/.../auth/http/AuthClientHttpRequestInterceptor.java`
-- `email-domain/src/main/java/.../auth/http/exchange/OrderClient.java`（示例）
-- `email-app/src/main/java/.../auth/config/HttpClientConfig.java`
-- RestClient.builder().requestInterceptor(new AuthClientHttpRequestInterceptor())
-- HttpServiceProxyFactory 生成代理 Bean
-
-### Step 6：测试 + 示例 Controller
-**测试（新建）：**
-- `UserContextTest.java`：ThreadLocal set/get/clear
-- `PermissionAspectTest.java`：权限通过/拒绝
-- `UserContextInterceptorTest.java`：请求头提取
-- `OrderClientTest.java`：MockServer 模拟下游
-- **覆盖目标：100% 行覆盖率**（JaCoCo）
-
-**示例 Controller（新建）：**
-- `email-adapter/src/main/java/.../auth/controller/AuthDemoController.java`
-- GET /api/auth/me（读取 UserContext）
-- GET /api/auth/demo（@RequirePermission 演示）
-
----
-
-## 三、文件清单（17 个新文件）
+## 八、文件清单（17 个文件）
 
 ```
-auth-service/                          ← 独立项目（COLA 架构）
-├── auth-domain/src/main/java/.../jwt/
-│   └── JwtValidator.java              ← JWT 验证逻辑
-├── auth-adapter/src/main/java/.../auth/
-│   └── AuthController.java            ← /auth/validate
-├── auth-infrastructure/src/main/java/.../config/
-│   └── JwtDecoderConfig.java          ← JWT 解码器配置
-├── auth-app/src/main/java/.../
-│   └── AuthApplication.java           ← 启动类
-├── start/pom.xml
-└── auth-adapter/src/test/.../
-    └── AuthControllerTest.java        ← 200/401 测试
-
-email-parent/                          ← 业务服务（现有项目）
-├── email-domain/src/main/java/.../auth/
-│   ├── context/UserContext.java       ← ThreadLocal
-│   ├── annotation/RequirePermission.java ← 权限注解
-│   └── http/
-│       ├── AuthClientHttpRequestInterceptor.java ← RestClient 拦截器
-│       └── exchange/OrderClient.java  ← @HttpExchange 示例
-├── email-adapter/src/main/java/.../auth/
-│   ├── interceptor/UserContextInterceptor.java  ← 请求拦截
-│   ├── config/WebConfig.java          ← 拦截器注册
-│   └── controller/AuthDemoController.java ← 示例
-├── email-app/src/main/java/.../auth/
-│   ├── aspect/PermissionAspect.java   ← AOP 切面
-│   └── config/HttpClientConfig.java   ← 代理 Bean
-├── start/pom.xml                      ← 加 aop 依赖
-└── email-app/src/test/.../auth/
-    ├── UserContextTest.java
-    ├── PermissionAspectTest.java
-    ├── UserContextInterceptorTest.java
-    └── OrderClientTest.java
+microservice-demo/
+├── pom.xml
+├── auth-service/
+│   ├── pom.xml
+│   └── src/main/java/.../
+│       ├── AuthApplication.java
+│       ├── controller/AuthController.java
+│       └── service/JwtService.java
+├── user-service/
+│   ├── pom.xml
+│   └── src/main/java/.../
+│       ├── UserApplication.java
+│       ├── context/UserContext.java
+│       ├── context/UserContextInterceptor.java
+│       ├── context/WebConfig.java
+│       ├── annotation/RequirePermission.java
+│       ├── aspect/PermissionAspect.java
+│       ├── http/AuthClientHttpRequestInterceptor.java
+│       ├── http/exchange/OrderClient.java
+│       ├── config/HttpClientConfig.java
+│       ├── controller/UserController.java
+│       └── model/UserDto.java
+├── order-service/
+│   ├── pom.xml
+│   └── src/main/java/.../
+│       ├── OrderApplication.java
+│       ├── controller/OrderController.java
+│       └── model/OrderDto.java
 ```
-
----
-
-## 四、风险点
-
-| 风险 | 应对 |
-|---|---|
-| ThreadLocal 内存泄漏 | afterCompletion 强制 clear() |
-| AOP 代理失效（同类调用） | AOP 代理模式 + public 方法 |
-| @HttpExchange 和现有 RestClient 冲突 | 独立 Bean 名称（authenticatedRestClient） |
-| 测试 mock UserContext | 用 UserContext.set() 手动设置 |
-
----
-
-## 五、预期产出
-
-- ✅ 13 个新文件（代码 + 测试）
-- ✅ 100% 覆盖率（JaCoCo）
-- ✅ 0 编译警告
-- ✅ 全链路可运行：Ingress 透传 → 拦截器 → UserContext → AOP → 下游透传
-
----
-
-## 六、执行顺序
-
-```
-Step 1 (5min) → Step 2 (10min) → Step 3 (10min)
-→ Step 4 (15min) → Step 5 (15min) → Step 6 (20min)
-≈ 75 分钟总工时
-```
-
----
-
-## 七、确认点
-
-1. **email-parent 里做还是新项目？** → 建议 email-parent（COLA 架构现成）
-2. **OrderClient 是示例还是真实服务？** → 示例如需求文档要求
-3. **Spring Security 要不要引入？** → 需求说"可以用 AccessDeniedException"，当前方案用自定义异常也行
-4. **前端怎么测试？** → 手动 curl 模拟 Ingress 头，或搭简单 auth-url mock
-
-**计划文件位置：** `~/.hermes/plans/2026-08-28_springboot-security-impl.md`
