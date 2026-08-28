@@ -1,0 +1,32 @@
+# hpa.yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ .Release.Name }}-hap
+spec:
+  scaleTargetRef: # 要扩缩的目标
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ .Release.Name }}                          # Deployment 名字
+  minReplicas: {{.Values.minReplicas}}                          # 最少 Pod 数
+  maxReplicas: {{.Values.maxReplicas}}                          # 最多 Pod 数
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization                  # 按百分比
+          averageUtilization: 70             # CPU 使用率超 70% 扩容
+  behavior: # 可选：控制扩缩速度
+    scaleDown:
+      stabilizationWindowSeconds: 300      # 缩容冷却期 5 分钟（防抖动）
+      policies:
+        - type: Pods
+          value: 1                           # 每次最多缩 1 个
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0        # 扩容不等待（立即响应）
+      policies:
+        - type: Percent
+          value: 100                         # 每次最多翻倍
+          periodSeconds: 15

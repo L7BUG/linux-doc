@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{.Release.Name }}
+spec:
+  replicas: {{.Values.minReplicas}}
+  selector:
+    matchLabels:
+      app: {{.Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: {{.Release.Name }}
+    spec:
+      containers:
+        - name: {{.Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          ports:
+            - containerPort: {{.Values.containerPort}}
+          # 存活检查（每 10 秒检测一次）
+{{/*          livenessProbe:*/}}
+{{/*            httpGet:*/}}
+{{/*              path: /actuator/health     # Spring Boot Actuator 健康端点*/}}
+{{/*              port: {{.Values.containerPort}}*/}}
+{{/*            initialDelaySeconds: 30      # 启动后等 30 秒再检查（给应用启动时间）*/}}
+{{/*            periodSeconds: 10*/}}
+{{/*            failureThreshold: 3          # 连续失败 3 次就重启*/}}
+{{/*          # 就绪检查（就绪后才接收流量）*/}}
+{{/*          readinessProbe:*/}}
+{{/*            httpGet:*/}}
+{{/*              path: /actuator/health*/}}
+{{/*              port: {{.Values.containerPort}}*/}}
+{{/*            initialDelaySeconds: 15*/}}
+{{/*            periodSeconds: 5*/}}
+          resources: # 限制资源（后面第4章详细讲）
+            requests:
+              memory: "128Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+          env:
+            # 从 ConfigMap 注入
+            - name: SPRING_APPLICATION_NAME
+              value: {{.Values.spring.application.name}}
+            - name: SERVER_PORT
+              value: "{{.Values.containerPort}}"
+            # 从 Secret 注入
+            - name: USERNAME
+              value: {{.Values.username}}
+            - name: PASSWORD
+              value: {{.Values.password}}
