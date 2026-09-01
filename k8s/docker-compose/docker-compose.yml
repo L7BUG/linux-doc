@@ -40,7 +40,7 @@ services:
       - K3S_TOKEN=${K3S_TOKEN}
     command: server ${K3S_SERVER_FLAGS}
     healthcheck:
-      test: ["CMD-SHELL", "k3s kubectl get nodes 2>/dev/null | grep -q Ready"]
+      test: ["CMD-SHELL", "kubectl get nodes k3s-server-company| grep Ready"]
       interval: 15s
       timeout: 5s
       retries: 10
