@@ -156,15 +156,14 @@ cp /path/to/.env.company .env
 vim .env
 ```
 
-**必须修改的值**：
+**必须确认的值**：
 
 ```bash
-# 把下面的 IP 替换成你实际的 Tailscale IP
 K3S_TOKEN=k3s-cluster-token-2026    # 自定义一个复杂字符串
-K3S_NODE_IP=100.64.0.1               # 公司开发机的 Tailscale IP
+K3S_NODE_HOST=pc1                    # 公司开发机的 Tailscale 节点名
 ```
 
-> `.env.company` 模板中已预设了 `--cluster-init` 参数，公司开发机是第一个 server，负责初始化集群。
+> `.env.company` 模板中已预设了 `--cluster-init` 参数，公司开发机是第一个 server，负责初始化集群。Tailscale 节点名直接代替 IP，MagicDNS 自动解析。
 
 ### 3.3 启动集群
 
@@ -191,7 +190,7 @@ docker exec k3s-server cat /var/lib/rancher/k3s/server/node-token
 ```bash
 mkdir -p ~/.kube
 docker cp k3s-server:/etc/rancher/k3s/k3s.yaml ~/.kube/config
-sed -i 's/127.0.0.1:6443/<公司Tailscale-IP>:6443/g' ~/.kube/config
+sed -i 's/127.0.0.1:6443/pc1:6443/g' ~/.kube/config
 chmod 600 ~/.kube/config
 
 # 验证
@@ -216,15 +215,15 @@ cp /path/to/.env.home .env
 vim .env
 ```
 
-**必须修改的值**：
+**必须确认的值**：
 
 ```bash
 K3S_TOKEN=k3s-cluster-token-2026    # 和公司开发机保持一致！
-K3S_SERVER_IP=100.64.0.1             # 公司开发机的 Tailscale IP
-K3S_NODE_IP=100.64.0.2               # 家里开发机自己的 Tailscale IP
+K3S_SERVER_HOST=pc1                  # 公司开发机的 Tailscale 节点名
+K3S_NODE_HOST=pc2                    # 家里开发机自己的 Tailscale 节点名
 ```
 
-> `.env.home` 模板中预设了 `--server https://...` 参数，家里开发机作为第二个 server 加入已有集群。
+> `.env.home` 模板中预设了 `--server https://pc1:6443` 参数，家里开发机作为第二个 server 加入已有集群。
 
 ### 4.3 启动
 
@@ -241,14 +240,12 @@ docker compose up -d
 云服务器 B 使用原生 K3s 安装（不用 Docker），作为第三个 server 节点：
 
 ```bash
-# 在云服务器 B 上执行（Debian）
+# 在云服务器 B（sv1）上执行（Debian）
 curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server" \
   sh -s - \
-  --server https://<公司Tailscale-IP>:6443 \
-  --tls-san=<公司Tailscale-IP> \
-  --tls-san=<家里Tailscale-IP> \
-  --tls-san=<云服务器B-Tailscale-IP> \
-  --node-ip=<云服务器B-Tailscale-IP> \
+  --server https://pc1:6443 \
+  --tls-san=pc1 --tls-san=pc2 --tls-san=sv1 \
+  --node-ip=sv1 \
   --flannel-backend=host-gw \
   --disable=traefik
 ```
@@ -275,10 +272,11 @@ kubectl get nodes -o wide
 ### 6.2 云服务器 A（轻量 Agent）
 
 ```bash
-curl -sfL https://get.k3s.io | K3S_URL=https://<公司Tailscale-IP>:6443 \
+# 云服务器 A（sv2）— Agent（原生安装）
+curl -sfL https://get.k3s.io | K3S_URL=https://pc1:6443 \
   K3S_TOKEN=<node-token> \
   sh -s - agent \
-  --node-ip=<云服务器A-Tailscale-IP> \
+  --node-ip=sv2 \
   --flannel-backend=host-gw \
   --disable=traefik
 ```
@@ -372,8 +370,8 @@ Flannel `host-gw` 模式直接通过 Tailscale 的 WireGuard 隧道路由 Pod �
 
 ```bash
 # 从任意设备（包括笔记本）配置 kubectl
-scp <公司Tailscale-IP>:~/.kube/config ~/.kube/config
-sed -i 's/127.0.0.1:6443/<公司Tailscale-IP>:6443/g' ~/.kube/config
+scp pc1:~/.kube/config ~/.kube/config
+sed -i 's/127.0.0.1:6443/pc1:6443/g' ~/.kube/config
 kubectl get nodes
 ```
 
@@ -422,10 +420,10 @@ docker exec k3s-server k3s etcd-snapshot list
 
 ```bash
 # 新 Agent（原生安装）
-curl -sfL https://get.k3s.io | K3S_URL=https://<公司Tailscale-IP>:6443 \
+curl -sfL https://get.k3s.io | K3S_URL=https://pc1:6443 \
   K3S_TOKEN=<node-token> \
   sh -s - agent \
-  --node-ip=<新节点Tailscale-IP> \
+  --node-ip=<新节点Tailscale节点名> \
   --flannel-backend=host-gw \
   --disable=traefik
 ```
@@ -471,7 +469,7 @@ etcd quorum 丢失，集群暂停。但**数据不丢失**——etcd 数据在 v
 ### Q: kubeconfig 地址是 127.0.0.1？
 
 ```bash
-sed -i 's/127.0.0.1:6443/<公司Tailscale-IP>:6443/g' ~/.kube/config
+sed -i 's/127.0.0.1:6443/pc1:6443/g' ~/.kube/config
 ```
 
 ### Q: Flannel host-gw 下 Pod 通信不通？
