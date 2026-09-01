@@ -153,8 +153,9 @@ K3s 使用内置的 containerd，镜像加速配置文件是 `/etc/rancher/k3s/r
 
 > **注意**：必须写到 `/etc/rancher/k3s/registries.yaml`，写到 `/etc/containerd/config.toml` 对 K3s 无效（那是系统 containerd 的配置，K3s 不认）。
 
+**云服务器（原生安装）**：
+
 ```bash
-# 所有机器都执行
 sudo mkdir -p /etc/rancher/k3s
 sudo tee /etc/rancher/k3s/registries.yaml << 'EOF'
 mirrors:
@@ -169,10 +170,19 @@ mirrors:
     endpoint:
       - "https://registry.k8s.xuanyuan.me"
 EOF
+sudo systemctl restart k3s
+```
 
-# 重启 K3s 使配置生效
-# 云服务器：sudo systemctl restart k3s
-# 开发机：docker compose restart
+**开发机（Docker 环境）**：
+
+1. 在宿主机上创建配置文件（路径和内容同上）
+2. docker-compose.yml 已挂载 `/etc/rancher/k3s/registries.yaml` 到容器内
+3. 重启生效：
+
+```bash
+cd ~/k3s-cluster
+docker compose down
+docker compose up -d
 ```
 
 ---
