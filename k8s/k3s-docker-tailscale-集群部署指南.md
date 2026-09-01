@@ -164,6 +164,8 @@ K3S_NODE_HOST=pc1                    # 公司开发机的 Tailscale 节点名
 ```
 
 > `.env.company` 模板中已预设了 `--cluster-init` 参数，公司开发机是第一个 server，负责初始化集群。Tailscale 节点名直接代替 IP，MagicDNS 自动解析。
+>
+> **重要**：集群第一次启动成功后，**必须去掉 `--cluster-init`**，否则 volume 丢失时会意外创建空集群。操作方法：编辑 `.env`，把 `--cluster-init` 从 `K3S_SERVER_FLAGS` 中删除，然后 `docker compose down && docker compose up -d` 重启生效。
 
 ### 3.3 启动集群
 
@@ -461,6 +463,10 @@ sudo /usr/local/bin/k3s-agent-uninstall.sh
 ### Q: 3 个 server 都挂了怎么办？
 
 etcd quorum 丢失，集群暂停。但**数据不丢失**——etcd 数据在 volume/磁盘上。任意 2 个 server 恢复后集群自动恢复。
+
+### Q: `--cluster-init` 每次重启都会重新初始化吗？
+
+**不会。** 如果 volume 数据还在，K3s 会检测到已有 etcd 数据并跳过初始化。但**建议集群跑起来后去掉 `--cluster-init`**，避免 volume 丢失时意外创建空集群。编辑 `.env` 删除该参数，`docker compose down && docker compose up -d` 重启生效。
 
 ### Q: 嵌入式 etcd 初始化失败？
 
