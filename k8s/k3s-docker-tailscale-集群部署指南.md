@@ -160,10 +160,10 @@ vim .env
 
 ```bash
 K3S_TOKEN=k3s-cluster-token-2026    # 自定义一个复杂字符串
-K3S_NODE_HOST=pc1                    # 公司开发机的 Tailscale 节点名
+K3S_NODE_IP=100.64.0.1               # pc1 的 Tailscale IP（tailscale status 查看）
 ```
 
-> `.env.company` 模板中已预设了 `--cluster-init` 参数，公司开发机是第一个 server，负责初始化集群。Tailscale 节点名直接代替 IP，MagicDNS 自动解析。
+> `.env.company` 模板中已预设了 `--cluster-init` 参数，公司开发机是第一个 server，负责初始化集群。`--server` 和 `--tls-san` 可以用 Tailscale 主机名，但 `--node-ip` 必须用 IP 地址（K3s 硬限制）。
 >
 > **重要**：集群第一次启动成功后，**必须去掉 `--cluster-init`**，否则 volume 丢失时会意外创建空集群。操作方法：编辑 `.env`，把 `--cluster-init` 从 `K3S_SERVER_FLAGS` 中删除，然后 `docker compose down && docker compose up -d` 重启生效。
 
@@ -223,8 +223,7 @@ vim .env
 
 ```bash
 K3S_TOKEN=k3s-cluster-token-2026    # 和公司开发机保持一致！
-K3S_SERVER_HOST=pc1                  # 公司开发机的 Tailscale 节点名
-K3S_NODE_HOST=pc2                    # 家里开发机自己的 Tailscale 节点名
+K3S_NODE_IP=100.64.0.2               # pc2 的 Tailscale IP
 ```
 
 > `.env.home` 模板中预设了 `--server https://pc1:6443` 参数，家里开发机作为第二个 server 加入已有集群。
@@ -245,11 +244,12 @@ docker compose up -d
 
 ```bash
 # 在云服务器 B（sv1）上执行（Debian）
+# --node-ip 必须用 IP，--server 和 --tls-san 可以用主机名
 curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server" \
   sh -s - \
   --server https://pc1:6443 \
   --tls-san=pc1 --tls-san=pc2 --tls-san=sv1 \
-  --node-ip=sv1 \
+  --node-ip=<sv1的Tailscale-IP> \
   --flannel-backend=host-gw \
   --disable=traefik
 ```
@@ -277,10 +277,11 @@ kubectl get nodes -o wide
 
 ```bash
 # 云服务器 A（sv2）— Agent（原生安装）
+# --node-ip 必须用 IP
 curl -sfL https://get.k3s.io | K3S_URL=https://pc1:6443 \
   K3S_TOKEN=<node-token> \
   sh -s - agent \
-  --node-ip=sv2 \
+  --node-ip=<sv2的Tailscale-IP> \
   --flannel-backend=host-gw \
   --disable=traefik
 ```
@@ -424,10 +425,11 @@ docker exec k3s-server k3s etcd-snapshot list
 
 ```bash
 # 新 Agent（原生安装）
+# --node-ip 必须用 IP，--server 可以用主机名
 curl -sfL https://get.k3s.io | K3S_URL=https://pc1:6443 \
   K3S_TOKEN=<node-token> \
   sh -s - agent \
-  --node-ip=<新节点Tailscale节点名> \
+  --node-ip=<新节点Tailscale-IP> \
   --flannel-backend=host-gw \
   --disable=traefik
 ```
@@ -473,6 +475,10 @@ etcd quorum 丢失，集群暂停。但**数据不丢失**——etcd 数据在 v
 ### Q: 嵌入式 etcd 初始化失败？
 
 **确保第一个 server 使用了 `--cluster-init`。** 只有公司开发机需要这个参数，其他 server 用 `--server` 加入。
+
+### Q: `--node-ip` 能用主机名吗？
+
+**不能。** K3s 的 `--node-ip` 参数只接受 IP 地址格式，不接受主机名。能用主机名的参数只有 `--server` 和 `--tls-san`。`--node-ip` 必须填 Tailscale 分配的 IP（`tailscale status` 查看）。
 
 ### Q: kubeconfig 地址是 127.0.0.1？
 

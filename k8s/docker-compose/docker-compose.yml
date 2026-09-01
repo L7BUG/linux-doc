@@ -61,7 +61,7 @@ services:
       - /dev/net/tun:/dev/net/tun
     environment:
       - K3S_TOKEN=${K3S_TOKEN}
-    command: agent --server https://${K3S_SERVER_HOST:-localhost}:6443 ${K3S_AGENT_FLAGS}
+    command: agent --server https://${K3S_SERVER_HOST:-localhost}:6443 --node-ip=${K3S_NODE_IP} ${K3S_AGENT_FLAGS}
 
 volumes:
   k3s-server-data:
