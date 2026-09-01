@@ -175,8 +175,8 @@ sudo systemctl restart k3s
 
 **开发机（Docker 环境）**：
 
-1. 在宿主机上创建配置文件（路径和内容同上）
-2. docker-compose.yml 已挂载 `/etc/rancher/k3s/registries.yaml` 到容器内
+1. 复制 docker-compose 目录时 `registries.yaml` 已包含在内
+2. docker-compose.yml 已挂载 `./registries.yaml` 到容器内
 3. 重启生效：
 
 ```bash

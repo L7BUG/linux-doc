@@ -31,7 +31,7 @@ services:
     volumes:
       - k3s-server-data:/var/lib/rancher/k3s
       - /dev/net/tun:/dev/net/tun
-      - /etc/rancher/k3s/registries.yaml:/etc/rancher/k3s/registries.yaml
+      - ./registries.yaml:/etc/rancher/k3s/registries.yaml
     environment:
       - K3S_TOKEN=${K3S_TOKEN}
     command: server ${K3S_SERVER_FLAGS}

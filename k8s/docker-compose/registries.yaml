@@ -1,0 +1,11 @@
+mirrors:
+  "docker.io":
+    endpoint:
+      - "https://docker.1ms.run"
+      - "https://docker.xuanyuan.me"
+  "ghcr.io":
+    endpoint:
+      - "https://ghcr.xuanyuan.me"
+  "registry.k8s.io":
+    endpoint:
+      - "https://registry.k8s.xuanyuan.me"
