@@ -104,6 +104,20 @@ tailscale ping <其他节点Tailscale-IP>
 
 ### 2.3 防火墙放行端口
 
+#### Tailscale（所有机器）
+
+```
+UDP 41641 → WireGuard 隧道（打洞用，仅云服务器需要开放）
+```
+
+```bash
+sudo ufw allow 41641/udp
+```
+
+> 开发机在内网（NAT 后面），不需要开放端口，Tailscale 会主动往外打洞。云服务器有公网 IP，需要开放 UDP 41641 让开发机连进来。**云厂商安全组也要放行此端口**。
+
+#### K3s（集群内部）
+
 | 端口 | 协议 | 用途 | 哪些节点需要 |
 |------|------|------|------------|
 | 6443 | TCP | Kubernetes API Server | Server 节点 |
@@ -118,7 +132,7 @@ sudo ufw allow 2379:2380/tcp
 sudo ufw allow 10250/tcp
 ```
 
-> 如果 Flannel 使用 `host-gw` 后端（本文推荐），可以不开放 8472/UDP。
+> 如果 Flannel 使用 `host-gw` 后端（本文推荐），可以不开放 8472/UDP。K3s 端口可以只放 Tailscale 内网，用 ACL 限制访问，更安全。
 
 ---
 
