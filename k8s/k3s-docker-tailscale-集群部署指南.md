@@ -1,72 +1,84 @@
 # K3s + Docker + Tailscale 多节点集群部署指南
 
-> **背景**：在多台物理机或云服务器上用 Docker 容器运行 K3s，组建 3 台控制面（server）+ 工作节点（agent）的高可用 Kubernetes 集群，节点间通过 Tailscale 虚拟局域网互联。适用于学习 K8s 多节点架构、异地测试环境搭建、边缘计算场景。
+> **背景**：用 4 台机器组建 K3s 集群——2 台个人开发机（公司+家里）通过 Docker 容器运行 K3s，2 台云服务器原生安装 K3s，所有节点通过 Tailscale 虚拟局域网互联。开发机的 K3s 完全运行在 Docker 内，不污染宿主机环境。
 
 ---
 
 ## 1. 架构概览
 
-### 1.1 为什么选 K3s + Docker + Tailscale
-
-| 对比维度 | 原生 K8s (kubeadm) | K3s + Docker | K3s + k3d |
-|----------|-------------------|--------------|-----------|
-| 安装复杂度 | 高（每节点手动配） | 中（Docker 统一环境） | 低（一行命令） |
-| 二进制大小 | ~500MB | ~60MB | ~60MB |
-| 多机部署 | 需要公网/VPN | Docker + Tailscale | 不支持（单机） |
-| 高可用 etcd | 需外部 etcd 集群 | 内置嵌入式 etcd | 内置嵌入式 etcd |
-| 适合场景 | 生产环境 | 异地测试/边缘部署 | 本地学习/CI |
-
-**核心优势**：
-- **K3s**：Rancher 出品的轻量 K8s，单二进制 ~60MB，内置 Flannel/etcd/CoreDNS
-- **Docker 容器化**：每台机器用 Docker 运行 K3s，环境隔离、易管理、易销毁重建
-- **Tailscale**：零配置 WireGuard VPN，节点间自动打洞直连，100.x.x.x 地址段天然适合集群组网
-
-### 1.2 集群拓扑
+### 1.1 集群拓扑
 
 ```
-                    ┌─────────────────────────────────┐
-                    │       Tailscale 虚拟局域网        │
-                    │     100.x.x.x / 100.y.y.y / ... │
-                    └─────────────────────────────────┘
-                          │           │           │
-                 ┌────────┴──┐  ┌─────┴─────┐  ┌─┴────────┐
-                 │  Node A    │  │  Node B    │  │  Node C   │
-                 │  (Server)  │  │  (Server)  │  │  (Server) │
-                 │  Docker    │  │  Docker    │  │  Docker   │
-                 │  + Tailscale│ │  + Tailscale│ │ + Tailscale│
-                 └─────┬──────┘  └──────┬─────┘  └─────┬─────┘
-                       │                │               │
-                  ┌────┴────┐     ┌─────┴────┐    ┌────┴────┐
-                  │ Agent 1 │     │ Agent 2  │    │ Agent 3 │
-                  │ Docker  │     │ Docker   │    │ Docker  │
-                  │+Tailscale│    │+Tailscale│    │+Tailscale│
-                  └─────────┘     └──────────┘    └─────────┘
+┌───────────────────────────────────────────────────────────────┐
+│                     Tailscale 虚拟局域网                       │
+│                  100.x.x.x 全节点互通                          │
+└───────────────────────────────────────────────────────────────┘
+       │                              │
+┌──────┴──────────────┐    ┌──────────┴────────────────┐
+│   开发机 A（公司）     │    │   开发机 B（家里）           │
+│   6C/12T + 32GB     │    │   6C/12T + 32GB           │
+│                     │    │                            │
+│   Docker 容器        │    │   Docker 容器               │
+│   ┌───────────────┐ │    │   ┌──────────────────────┐ │
+│   │ K3s Server    │ │    │   │ K3s Server           │ │
+│   │ + K3s Agent   │ │    │   │ + K3s Agent          │ │
+│   └───────────────┘ │    │   └──────────────────────┘ │
+└─────────────────────┘    └────────────────────────────┘
+       │                              │
+       └──────────────┬───────────────┘
+                      │
+       ┌──────────────┴───────────────────────┐
+       │                                      │
+┌──────┴──────────────┐    ┌──────────────────┴──────┐
+│   云服务器 D（8C/8G）  │    │   云服务器 C（2C/2G）     │
+│                     │    │                         │
+│   原生 K3s           │    │   原生 K3s               │
+│   ┌───────────────┐ │    │   ┌───────────────────┐ │
+│   │ K3s Agent     │ │    │   │ K3s Agent         │ │
+│   │ (主力工作节点)  │ │    │   │ (轻量工作节点)      │ │
+│   └───────────────┘ │    │   └───────────────────┘ │
+└─────────────────────┘    └─────────────────────────┘
 ```
 
-**说明**：
-- 3 台 Server 节点运行嵌入式 etcd，任意 1 台故障集群仍可用（quorum = 2）
-- Agent 节点负责运行业务 Pod
-- 所有节点通过 Tailscale 互联，K3s Flannel 使用 Tailscale 网络作为底层传输
+### 1.2 角色分配
 
-### 1.3 节点规划示例
+| 机器 | 配置 | 角色 | 部署方式 | 说明 |
+|------|------|------|---------|------|
+| 开发机 A（公司） | 6C/12T + 32GB | **Server + Agent** | Docker 容器 | 控制面 + 业务 Pod，不污染宿主机 |
+| 开发机 B（家里） | 6C/12T + 32GB | **Server + Agent** | Docker 容器 | 控制面 + 业务 Pod，不污染宿主机 |
+| 云服务器 D | 8C/8GB | **Agent** | 原生 K3s | 主力工作节点，7×24 在线 |
+| 云服务器 C | 2C/2GB | **Agent** | 原生 K3s | 轻量工作节点 |
 
-| 节点 | 角色 | Docker 主机 IP | Tailscale IP | 用途 |
-|------|------|---------------|-------------|------|
-| server-1 | Server (leader) | 192.168.1.10 | 100.64.0.1 | 控制面 + etcd |
-| server-2 | Server | 192.168.1.11 | 100.64.0.2 | 控制面 + etcd |
-| server-3 | Server | 192.168.1.12 | 100.64.0.3 | 控制面 + etcd |
-| agent-1 | Agent | 192.168.1.20 | 100.64.0.10 | 工作节点 |
-| agent-2 | Agent | 192.168.1.21 | 100.64.0.11 | 工作节点 |
+### 1.3 为什么是 2 server 而不是 3
 
-> 如果只有 2 台机器，可以在每台机器上同时跑 1 个 server 容器 + 1 个 agent 容器，第 3 个 server 容器也放在其中一台上。
+K3s 高可用需要奇数个 server 节点（嵌入式 etcd quorum）。理论上 3 server 最优，但你的两台开发机是**个人机器，非 7×24 在线**：
+
+| 方案 | 开发机全开时 | 开发机全关时（夜间/周末） |
+|------|-----------|---------------------|
+| 3 server（2开发机+1云） | ✅ 3/3 quorum | ❌ 1/3 quorum 丢失，集群挂 |
+| **2 server（2开发机）** | ✅ 2/2 quorum | ❌ 0/2 集群不可用 |
+| 3 server（3台云） | ✅ 正常 | ✅ 正常，但需要额外买云服务器 |
+
+**当前选择 2 server**：够用。开发机在线时集群完整可用，关机时集群暂停（数据不丢，开机自动恢复）。将来需要 7×24 高可用时，加一台便宜云服务器（2C/4G 足够）专门跑第 3 个 server 即可。
+
+### 1.4 资源规划
+
+| 机器 | K3s Server 占用 | K3s Agent 占用 | 剩余可用 |
+|------|----------------|---------------|---------|
+| 开发机 A（32GB） | ~500MB | ~200MB | ~31GB（给业务 Pod + 宿主机） |
+| 开发机 B（32GB） | ~500MB | ~200MB | ~31GB |
+| 云服务器 D（8GB） | — | ~500MB | ~7.5GB |
+| 云服务器 C（2GB） | — | ~500MB | ~1.5GB |
+
+> K3s Server 组件（API Server + etcd + Controller Manager + Scheduler）在嵌入式 etcd 模式下约占 500MB~1GB 内存。K3s Agent（kubelet + Container Runtime）约 200~500MB。
 
 ---
 
 ## 2. 前置准备
 
-### 2.1 Docker 安装与配置
+### 2.1 Docker 安装（仅开发机）
 
-**每台机器**都要安装 Docker：
+开发机需要 Docker 来运行 K3s 容器：
 
 ```bash
 # Debian/Ubuntu
@@ -74,693 +86,609 @@ curl -fsSL https://get.docker.com | sh
 sudo usermod -aG docker $USER
 # 重新登录生效
 
-# Arch Linux
-sudo pacman -S docker
-sudo systemctl enable --now docker
-sudo usermod -aG docker $USER
-```
-
-**验证**：
-
-```bash
+# 验证
 docker version
-docker run --rm hello-world
 ```
 
-### 2.2 Tailscale 安装与组网
+> 云服务器不需要 Docker，K3s 原生安装。
+
+### 2.2 Tailscale 安装（所有机器）
 
 ```bash
-# 安装 Tailscale
+# 所有 4 台机器都执行
 curl -fsSL https://tailscale.com/install.sh | sh
-
-# 启动并登录（浏览器授权）
 sudo tailscale up
-
-# 查看分配的 Tailscale IP
-tailscale status
+# 浏览器弹出授权页面，用 GitHub/Google/Microsoft 账号登录
 ```
-
-> 完整 Tailscale 使用指南见 [Tailscale 完全指南](../tools/network/tailscale-完全指南.md)。
 
 **验证所有节点互通**：
 
 ```bash
-# 在 Node A 上 ping Node B 的 Tailscale IP
-ping 100.64.0.2
-
-# 确认 Tailscale 直连（无 DERP 中转）
-tailscale ping 100.64.0.2
-# 输出 "direct connection to 100.64.0.2" 表示直连成功
+# 在任意节点上 ping 其他节点
+tailscale ping <其他节点Tailscale-IP>
+# 输出 "direct connection to 100.x.x.x" 表示直连成功
 ```
 
-> **重要**：确保所有节点的 Tailscale 都开启了 IP 转发。如果节点间 ping 不通，检查：
-> ```bash
-> sudo sysctl net.ipv4.ip_forward
-> # 应该输出 1，如果不是：
-> sudo sysctl -w net.ipv4.ip_forward=1
-> ```
+> 完整 Tailscale 使用指南见 [Tailscale 完全指南](../tools/network/tailscale-完全指南.md)。
 
 ### 2.3 防火墙放行端口
 
 K3s 需要以下端口（Tailscale 网络内）：
 
-| 端口 | 协议 | 用途 |
-|------|------|------|
-| 6443 | TCP | Kubernetes API Server |
-| 8472 | UDP | Flannel VXLAN（如果使用 VXLAN 后端） |
-| 2379-2380 | TCP | 嵌入式 etcd（仅 server 节点间） |
-| 10250 | TCP | Kubelet API |
-| 51820/51821 | UDP | WireGuard（如果使用 wireguard-native 后端） |
+| 端口 | 协议 | 用途 | 哪些节点需要 |
+|------|------|------|------------|
+| 6443 | TCP | Kubernetes API Server | Server 节点 |
+| 8472 | UDP | Flannel VXLAN（如果用 VXLAN 后端） | 所有节点 |
+| 2379-2380 | TCP | 嵌入式 etcd | Server 节点间 |
+| 10250 | TCP | Kubelet API | 所有节点 |
 
 ```bash
-# UFW（Ubuntu/Debian）
+# Debian/Ubuntu（ufw）
 sudo ufw allow 6443/tcp
 sudo ufw allow 8472/udp
 sudo ufw allow 2379:2380/tcp
 sudo ufw allow 10250/tcp
-sudo ufw allow 51820:51821/udp
-
-# firewalld（CentOS/RHEL）
-sudo firewall-cmd --permanent --add-port=6443/tcp
-sudo firewall-cmd --permanent --add-port=8472/udp
-sudo firewall-cmd --permanent --add-port=2379-2380/tcp
-sudo firewall-cmd --permanent --add-port=10250/tcp
-sudo firewall-cmd --reload
 ```
 
-> **注意**：如果使用 Tailscale 作为唯一网络通道（所有节点间只走 Tailscale），且 K3s Flannel 使用 `host-gw` 后端，则可以不开放 8472/UDP 和 51820/51821/UDP，因为流量已经由 Tailscale 的 WireGuard 隧道处理。
+> 如果所有节点都在 Tailscale 网络内，且 Flannel 使用 `host-gw` 后端，可以不开放 8472/UDP（流量走 Tailscale WireGuard 隧道）。
+
+### 2.4 确认系统环境
+
+| 机器 | 操作系统 | Docker | Tailscale |
+|------|---------|--------|-----------|
+| 开发机 A | （你的系统） | ✅ 已装 | ✅ 已装 |
+| 开发机 B | （你的系统） | ✅ 已装 | ✅ 已装 |
+| 云服务器 D | Debian | ❌ 不需要 | ✅ 已装 |
+| 云服务器 C | Debian | ❌ 不需要 | ✅ 已装 |
 
 ---
 
-## 3. 方案 A：k3d 单机模拟多节点集群
+## 3. Phase 1：初始化第一个 Server（开发机 A）
 
-> **适合场景**：学习多节点架构、本地测试、CI 环境。单台机器上用 Docker 模拟完整的 3 server + N agent 集群。
-
-### 3.1 安装 k3d
-
-```bash
-curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
-```
-
-### 3.2 创建集群
-
-```bash
-# 创建 3 个 server + 2 个 agent 的集群
-k3d cluster create my-cluster \
-  --servers 3 \
-  --agents 2 \
-  --wait
-```
-
-### 3.3 验证集群
-
-```bash
-# 查看节点
-kubectl get nodes -o wide
-
-# 输出示例：
-# NAME                       STATUS   ROLES                       AGE   VERSION        INTERNAL-IP
-# k3d-my-cluster-server-0    Ready    control-plane,master,etcd   30s   v1.31.x+k3s1   172.18.0.3
-# k3d-my-cluster-server-1    Ready    control-plane,master,etcd   30s   v1.31.x+k3s1   172.18.0.4
-# k3d-my-cluster-server-2    Ready    control-plane,master,etcd   30s   v1.31.x+k3s1   172.18.0.5
-# k3d-my-cluster-agent-0     Ready    <none>                      30s   v1.31.x+k3s1   172.18.0.6
-# k3d-my-cluster-agent-1     Ready    <none>                      30s   v1.31.x+k3s1   172.18.0.7
-
-# 查看系统 Pod
-kubectl get pods -A
-```
-
-### 3.4 销毁集群
-
-```bash
-k3d cluster delete my-cluster
-```
-
-> k3d 方案到此为止。下面的方案 B 是本文重点：跨机器的真实多节点集群。
-
----
-
-## 4. 方案 B：多台 Docker 主机 + Tailscale（生产级）
-
-> **适合场景**：异地测试环境、边缘计算、学习多机部署运维。
-
-### 4.1 整体流程
-
-```
-每台 Docker 主机执行：
-1. 安装 Docker + Tailscale（第 2 章已完成）
-2. 拉取 K3s Docker 镜像
-3. 创建 Docker 网络
-4. 启动 K3s 容器（server 或 agent）
-5. 验证集群
-```
-
-### 4.2 在每台机器上拉取 K3s 镜像
+### 3.1 拉取 K3s Docker 镜像
 
 ```bash
 docker pull rancher/k3s:latest
 ```
 
-> K3s 镜像约 60MB，拉取很快。
-
-### 4.3 创建 Docker 网络
-
-在每台机器上创建相同名称的 Docker 网络（用于 K3s 容器间通信）：
+### 3.2 创建 Docker 网络
 
 ```bash
 docker network create k3s-net
 ```
 
-### 4.4 启动第一个 Server 节点（集群初始化）
-
-在 **Node A**（100.64.0.1）上执行：
+### 3.3 启动第一个 Server（集群初始化）
 
 ```bash
 docker run -d \
-  --name k3s-server-1 \
+  --name k3s-server \
   --privileged \
   --network k3s-net \
-  --hostname k3s-server-1 \
-  -v k3s-server-1-data:/var/lib/rancher/k3s \
+  --hostname k3s-server \
+  --restart unless-stopped \
+  -v k3s-server-data:/var/lib/rancher/k3s \
   -v /dev/net/tun:/dev/net/tun \
   -p 6443:6443 \
-  -e K3S_TOKEN=my-secret-token \
+  -e K3S_TOKEN=k3s-cluster-token-2026 \
   rancher/k3s:latest \
   server \
   --cluster-init \
-  --tls-san=100.64.0.1 \
-  --tls-san=100.64.0.2 \
-  --tls-san=100.64.0.3 \
-  --node-ip=100.64.0.1 \
+  --tls-san=<开发机A-Tailscale-IP> \
+  --tls-san=<开发机B-Tailscale-IP> \
+  --node-ip=<开发机A-Tailscale-IP> \
   --flannel-backend=host-gw \
   --disable=traefik
 ```
+
+> **替换占位符**：`<开发机A-Tailscale-IP>` 换成实际的 100.x.x.x 地址。
 
 **参数说明**：
 
 | 参数 | 作用 |
 |------|------|
 | `--privileged` | K3s 需要特权模式操作 cgroups/网络 |
-| `--cluster-init` | 初始化嵌入式 etcd 集群（3 server HA 必需） |
-| `--tls-san` | 额外的 API Server 证书主体（Tailscale IP） |
+| `--cluster-init` | 初始化嵌入式 etcd 集群 |
+| `--tls-san` | API Server 证书主体（允许通过 Tailscale IP 访问） |
 | `--node-ip` | 告诉 K3s 使用 Tailscale IP 作为节点地址 |
-| `--flannel-backend=host-gw` | Flannel 使用 host-gw 模式（Tailscale 已提供 L3 连通性） |
-| `--disable=traefik` | 禁用内置 Traefik（可选，按需开启） |
-| `-e K3S_TOKEN` | 集群共享密钥，其他节点加入时需要 |
-| `-v k3s-server-1-data` | 持久化 K3s 数据（etcd、证书等） |
+| `--flannel-backend=host-gw` | Flannel 直接路由（Tailscale 已提供 L3 连通性） |
+| `--disable=traefik` | 禁用内置 Traefik（按需开启） |
+| `-e K3S_TOKEN` | 集群共享密钥，所有节点必须一致 |
+| `--restart unless-stopped` | Docker 重启后自动恢复 |
+| `-v k3s-server-data` | 持久化 etcd 数据、证书、config |
 
-> **为什么用 `host-gw` 而不是 `vxlan`？**
-> Tailscale 已经建立了节点间的三层网络（100.x.x.x 互通），Flannel 不需要再封装一层 VXLAN。`host-gw` 直接路由，性能更好、延迟更低。
-
-### 4.5 获取节点令牌
+### 3.4 等待 Server 就绪
 
 ```bash
-# 查看第一个 server 的节点令牌（其他节点加入需要）
-docker exec k3s-server-1 cat /var/lib/rancher/k3s/server/node-token
+# 查看容器日志，等待 "Wrote kubeconfig" 出现
+docker logs -f k3s-server
+# 看到类似下面的输出就说明 server 启动成功：
+# Wrote control plane kubeconfig to /etc/rancher/k3s/k3s.yaml
+```
+
+### 3.5 获取节点令牌
+
+```bash
+docker exec k3s-server cat /var/lib/rancher/k3s/server/node-token
 # 输出类似：K10c0f43838d824...::server:6f8c7e...
 ```
 
 > **记下这个令牌**，后续所有节点加入集群都需要它。
 
-### 4.6 启动第二个 Server 节点
-
-在 **Node B**（100.64.0.2）上执行：
+### 3.6 在开发机 A 上配置 kubectl
 
 ```bash
-docker run -d \
-  --name k3s-server-2 \
-  --privileged \
-  --network k3s-net \
-  --hostname k3s-server-2 \
-  -v k3s-server-2-data:/var/lib/rancher/k3s \
-  -v /dev/net/tun:/dev/net/tun \
-  -e K3S_TOKEN=my-secret-token \
-  rancher/k3s:latest \
-  server \
-  --server https://100.64.0.1:6443 \
-  --tls-san=100.64.0.1 \
-  --tls-san=100.64.0.2 \
-  --tls-san=100.64.0.3 \
-  --node-ip=100.64.0.2 \
-  --flannel-backend=host-gw \
-  --disable=traefik
-```
+# 拷贝 kubeconfig
+docker cp k3s-server:/etc/rancher/k3s/k3s.yaml ~/.kube/config
 
-**关键区别**：没有 `--cluster-init`，而是用 `--server https://100.64.0.1:6443` 加入已有集群。
+# 修改 server 地址（从 localhost 改成 Tailscale IP）
+sed -i 's/127.0.0.1:6443/<开发机A-Tailscale-IP>:6443/g' ~/.kube/config
 
-### 4.7 启动第三个 Server 节点
-
-在 **Node C**（100.64.0.3）上执行：
-
-```bash
-docker run -d \
-  --name k3s-server-3 \
-  --privileged \
-  --network k3s-net \
-  --hostname k3s-server-3 \
-  -v k3s-server-3-data:/var/lib/rancher/k3s \
-  -v /dev/net/tun:/dev/net/tun \
-  -e K3S_TOKEN=my-secret-token \
-  rancher/k3s:latest \
-  server \
-  --server https://100.64.0.1:6443 \
-  --tls-san=100.64.0.1 \
-  --tls-san=100.64.0.2 \
-  --tls-san=100.64.0.3 \
-  --node-ip=100.64.0.3 \
-  --flannel-backend=host-gw \
-  --disable=traefik
-```
-
-> **注意**：`--server` 参数指向任意一个已有的 server 节点即可，不一定非要是 leader。
-
-### 4.8 启动 Agent 节点
-
-在 **Node D**（100.64.0.10）上执行：
-
-```bash
-docker run -d \
-  --name k3s-agent-1 \
-  --privileged \
-  --network k3s-net \
-  --hostname k3s-agent-1 \
-  -v k3s-agent-1-data:/var/lib/rancher/k3s \
-  -v /dev/net/tun:/dev/net/tun \
-  -e K3S_TOKEN=my-secret-token \
-  rancher/k3s:latest \
-  agent \
-  --server https://100.64.0.1:6443 \
-  --node-ip=100.64.0.10 \
-  --flannel-backend=host-gw \
-  --disable=traefik
-```
-
-在 **Node E**（100.64.0.11）上执行：
-
-```bash
-docker run -d \
-  --name k3s-agent-2 \
-  --privileged \
-  --network k3s-net \
-  --hostname k3s-agent-2 \
-  -v k3s-agent-2-data:/var/lib/rancher/k3s \
-  -v /dev/net/tun:/dev/net/tun \
-  -e K3S_TOKEN=my-secret-token \
-  rancher/k3s:latest \
-  agent \
-  --server https://100.64.0.1:6443 \
-  --node-ip=100.64.0.11 \
-  --flannel-backend=host-gw \
-  --disable=traefik
-```
-
-### 4.9 使用 KUBECONFIG 远程管理集群
-
-在任意一台机器上（推荐你的本地开发机）配置 kubectl 远程访问：
-
-```bash
-# 从第一个 server 节点拷贝 kubeconfig
-docker cp k3s-server-1:/etc/rancher/k3s/k3s.yaml ./k3s.yaml
-
-# 编辑 kubeconfig，把 server 地址改成 Tailscale IP
-# 把 127.0.0.1:6443 替换成 100.64.0.1:6443
-sed -i 's/127.0.0.1:6443/100.64.0.1:6443/g' ./k3s.yaml
-
-# 放到 kubectl 默认位置
-mkdir -p ~/.kube
-cp k3s.yaml ~/.kube/config
+# 设置权限
 chmod 600 ~/.kube/config
 
 # 验证
+kubectl get nodes
+# 应该看到 k3s-server 状态为 Ready
+```
+
+---
+
+## 4. Phase 2：第二个 Server 加入（开发机 B）
+
+### 4.1 拉取镜像 + 创建网络
+
+```bash
+# 在开发机 B 上执行
+docker pull rancher/k3s:latest
+docker network create k3s-net
+```
+
+### 4.2 启动第二个 Server
+
+```bash
+docker run -d \
+  --name k3s-server \
+  --privileged \
+  --network k3s-net \
+  --hostname k3s-server \
+  --restart unless-stopped \
+  -v k3s-server-data:/var/lib/rancher/k3s \
+  -v /dev/net/tun:/dev/net/tun \
+  -e K3S_TOKEN=k3s-cluster-token-2026 \
+  rancher/k3s:latest \
+  server \
+  --server https://<开发机A-Tailscale-IP>:6443 \
+  --tls-san=<开发机A-Tailscale-IP> \
+  --tls-san=<开发机B-Tailscale-IP> \
+  --node-ip=<开发机B-Tailscale-IP> \
+  --flannel-backend=host-gw \
+  --disable=traefik
+```
+
+> **关键区别**：没有 `--cluster-init`，用 `--server` 指向开发机 A 加入已有集群。
+
+### 4.3 等待就绪
+
+```bash
+docker logs -f k3s-server
+# 等待 "Node synced" 或日志不再报连接错误
+```
+
+---
+
+## 5. Phase 3：开发机 Agent 加入
+
+### 5.1 开发机 A 的 Agent
+
+```bash
+docker run -d \
+  --name k3s-agent \
+  --privileged \
+  --network k3s-net \
+  --hostname k3s-agent \
+  --restart unless-stopped \
+  -v k3s-agent-data:/var/lib/rancher/k3s \
+  -v /dev/net/tun:/dev/net/tun \
+  -e K3S_TOKEN=k3s-cluster-token-2026 \
+  rancher/k3s:latest \
+  agent \
+  --server https://<开发机A-Tailscale-IP>:6443 \
+  --node-ip=<开发机A-Tailscale-IP> \
+  --flannel-backend=host-gw \
+  --disable=traefik
+```
+
+### 5.2 开发机 B 的 Agent
+
+```bash
+docker run -d \
+  --name k3s-agent \
+  --privileged \
+  --network k3s-net \
+  --hostname k3s-agent \
+  --restart unless-stopped \
+  -v k3s-agent-data:/var/lib/rancher/k3s \
+  -v /dev/net/tun:/dev/net/tun \
+  -e K3S_TOKEN=k3s-cluster-token-2026 \
+  rancher/k3s:latest \
+  agent \
+  --server https://<开发机A-Tailscale-IP>:6443 \
+  --node-ip=<开发机B-Tailscale-IP> \
+  --flannel-backend=host-gw \
+  --disable=traefik
+```
+
+### 5.3 验证 4 个节点
+
+```bash
+# 在开发机 A 上执行
+kubectl get nodes -o wide
+```
+
+**预期输出**（此时云服务器还没加入，应该看到 4 个节点）：
+
+```
+NAME                  STATUS   ROLES                       AGE   VERSION        INTERNAL-IP
+k3s-server            Ready    control-plane,master,etcd   10m   v1.31.x+k3s1   100.64.0.1
+k3s-server            Ready    control-plane,master,etcd   5m    v1.31.x+k3s1   100.64.0.2
+k3s-agent             Ready    <none>                      2m    v1.31.x+k3s1   100.64.0.1
+k3s-agent             Ready    <none>                      1m    v1.31.x+k3s1   100.64.0.2
+```
+
+> 注意：两个 server 和两个 agent 的 hostname 都叫 `k3s-server` / `k3s-agent`，K3s 用 node name 区分。如果需要区分，可以在 Docker run 时用 `--hostname` 设置不同名称。
+
+---
+
+## 6. Phase 4：云服务器加入集群
+
+### 6.1 云服务器 D（8C/8G）— 主力 Agent
+
+```bash
+# 在云服务器 D 上执行（Debian 原生安装）
+curl -sfL https://get.k3s.io | K3S_URL=https://<开发机A-Tailscale-IP>:6443 \
+  K3S_TOKEN=<node-token> \
+  sh -s - agent \
+  --node-ip=<云服务器D-Tailscale-IP> \
+  --flannel-backend=host-gw \
+  --disable=traefik
+```
+
+> `<node-token>` 是 Phase 1 中获取的节点令牌。
+
+### 6.2 云服务器 C（2C/2G）— 轻量 Agent
+
+```bash
+# 在云服务器 C 上执行
+curl -sfL https://get.k3s.io | K3S_URL=https://<开发机A-Tailscale-IP>:6443 \
+  K3S_TOKEN=<node-token> \
+  sh -s - agent \
+  --node-ip=<云服务器C-Tailscale-IP> \
+  --flannel-backend=host-gw \
+  --disable=traefik
+```
+
+### 6.3 云服务器卸载 K3s（如果需要）
+
+```bash
+# 原生安装的 K3s 卸载
+/usr/local/bin/k3s-uninstall.sh
+```
+
+---
+
+## 7. 集群验证
+
+### 7.1 确认所有节点 Ready
+
+```bash
 kubectl get nodes -o wide
 ```
 
 **预期输出**：
 
 ```
-NAME           STATUS   ROLES                       AGE     VERSION        INTERNAL-IP
-k3s-server-1   Ready    control-plane,master,etcd   5m      v1.31.x+k3s1   100.64.0.1
-k3s-server-2   Ready    control-plane,master,etcd   4m      v1.31.x+k3s1   100.64.0.2
-k3s-server-3   Ready    control-plane,master,etcd   3m      v1.31.x+k3s1   100.64.0.3
-k3s-agent-1    Ready    <none>                      2m      v1.31.x+k3s1   100.64.0.10
-k3s-agent-2    Ready    <none>                      1m      v1.31.x+k3s1   100.64.0.11
+NAME                  STATUS   ROLES                       AGE     VERSION        INTERNAL-IP
+k3s-server            Ready    control-plane,master,etcd   30m     v1.31.x+k3s1   100.64.0.1
+k3s-server            Ready    control-plane,master,etcd   25m     v1.31.x+k3s1   100.64.0.2
+k3s-agent             Ready    <none>                      20m     v1.31.x+k3s1   100.64.0.1
+k3s-agent             Ready    <none>                      15m     v1.31.x+k3s1   100.64.0.2
+k3s-agent-d           Ready    <none>                      10m     v1.31.x+k3s1   100.64.0.10
+k3s-agent-c           Ready    <none>                      5m      v1.31.x+k3s1   100.64.0.11
 ```
 
-> **INTERNAL-IP 应该全部显示 Tailscale IP**（100.x.x.x），如果显示 Docker 内部 IP（172.x.x.x），说明 `--node-ip` 参数没生效，检查 K3s 容器日志。
+> **INTERNAL-IP 必须全部是 Tailscale IP**（100.x.x.x）。如果显示 Docker 内部 IP（172.x.x.x），说明 `--node-ip` 没生效。
+
+### 7.2 系统 Pod 检查
+
+```bash
+kubectl get pods -A
+# 所有 Pod 应该都是 Running 或 Completed
+```
+
+### 7.3 部署测试应用
+
+```bash
+# 创建 Deployment（5 副本，分布在不同节点）
+kubectl create deployment test-nginx --image=nginx:alpine --replicas=5
+
+# 等待就绪
+kubectl rollout status deployment test-nginx
+
+# 查看 Pod 分布
+kubectl get pods -o wide -l app=test-nginx
+# 应该看到 Pod 分布在不同的 agent 节点上
+
+# 创建 Service
+kubectl expose deployment test-nginx --port=80 --type=NodePort
+
+# 获取 NodePort
+NODE_PORT=$(kubectl get svc test-nginx -o jsonpath='{.spec.ports[0].nodePort}')
+
+# 从 Tailscale 网络访问
+curl http://<任意节点Tailscale-IP>:$NODE_PORT
+# 应返回 nginx 欢迎页
+```
+
+### 7.4 高可用测试
+
+```bash
+# 停掉开发机 B 的 K3s（模拟故障）
+docker stop k3s-server k3s-agent
+
+# 验证集群仍可用
+kubectl get nodes -o wide
+# 开发机 B 的节点应显示 NotReady，但集群仍正常工作
+
+# 部署新应用（验证写操作仍可用）
+kubectl create deployment ha-test --image=nginx:alpine
+kubectl rollout status deployment ha-test
+
+# 恢复
+docker start k3s-server k3s-agent
+```
+
+### 7.5 清理测试资源
+
+```bash
+kubectl delete deployment test-nginx ha-test
+kubectl delete svc test-nginx
+```
 
 ---
 
-## 5. Tailscale 网络深入
+## 8. Tailscale 网络集成
 
-### 5.1 流量路径分析
+### 8.1 流量路径
 
 ```
-Pod A (Node A) → Pod B (Node B)
+Pod A (开发机A) → Pod B (云服务器D)
      │                    │
      └── K3s Flannel ────┘
           (host-gw 直接路由)
                │
         Tailscale WireGuard 隧道
                │
-     100.64.0.1 ←→ 100.64.0.2
+     100.64.0.1 ←→ 100.64.0.10
 ```
 
-**数据流向**：
-1. Pod A 发送数据包到 Pod B 的 IP
-2. K3s Flannel（host-gw 模式）查路由表，发现目标在 100.64.0.2
-3. 直接通过 Tailscale 的 WireGuard 隧道发给 Node B
-4. Node B 的 Flannel 收到后转给 Pod B
+Flannel 使用 `host-gw` 模式，直接通过 Tailscale 的 WireGuard 隧道路由 Pod 流量，无需额外封装。
 
-### 5.2 查看 K3s Flannel 路由
+### 8.2 查看路由表
 
 ```bash
-# 在任意 server 节点上
-docker exec k3s-server-1 ip route
+# 在任意节点上
+ip route | grep 10.42
 # 应该看到类似：
-# 10.42.1.0/24 via 100.64.0.2 dev tailscale0    # agent-1 的 Pod 网段
-# 10.42.2.0/24 via 100.64.0.3 dev tailscale0    # agent-2 的 Pod 网段
-# 100.64.0.0/24 dev tailscale0 proto kernel ...
+# 10.42.1.0/24 via 100.64.0.2 dev tailscale0
+# 10.42.2.0/24 via 100.64.0.10 dev tailscale0
 ```
 
-> 如果路由表中出现 `via 100.64.0.x dev eth0`（Docker 网桥）而不是 `dev tailscale0`，说明 K3s 没有正确使用 Tailscale 网络，需要检查 `--node-ip` 配置。
+### 8.3 远程管理集群
 
-### 5.3 跨主机 Service 访问
+从任意安装了 kubectl 的机器（包括你自己的笔记本），配置 kubeconfig 即可远程管理：
 
 ```bash
-# 在 Node A 上部署一个 nginx
-kubectl create deployment nginx --image=nginx --replicas=3
-kubectl expose deployment nginx --port=80 --type=NodePort
+# 从开发机 A 拷贝 kubeconfig
+scp <开发机A-Tailscale-IP>:~/.kube/config ~/.kube/config
 
-# 查看分配的 NodePort
-kubectl get svc nginx
-# NAME    TYPE       CLUSTER-IP    EXTERNAL-IP   PORT(S)        AGE
-# nginx   NodePort   10.43.x.x    <none>        80:3xxxx/TCP   10s
+# 确保 server 地址是 Tailscale IP（不是 127.0.0.1）
+sed -i 's/127.0.0.1:6443/<开发机A-Tailscale-IP>:6443/g' ~/.kube/config
 
-# 从任意 Tailscale 节点访问
-curl http://100.64.0.1:3xxxx
-curl http://100.64.0.10:3xxxx
-# 两个都能返回 nginx 欢迎页，说明跨节点 Service 路由正常
-```
-
-### 5.4 Tailscale ACL 建议
-
-如果需要精细化控制节点间访问，可以在 Tailscale 管理后台（https://login.tailscale.com/admin/acls）配置 ACL：
-
-```json
-{
-  "acls": [
-    {
-      // 允许所有 tailnet 内设备互通（适合测试环境）
-      "action": "accept",
-      "src": ["autogroup:member"],
-      "dst": ["autogroup:member:*"]
-    }
-  ]
-}
-```
-
-> 生产环境建议限制只有 K3s 节点才能访问 6443 端口，避免未授权访问 API Server。
-
----
-
-## 6. 集群验证
-
-### 6.1 基础验证
-
-```bash
-# 节点状态
-kubectl get nodes -o wide
-
-# 系统 Pod 是否全部 Running
-kubectl get pods -A
-
-# 组件健康状态
-kubectl get componentstatuses
-# 或
-kubectl get --raw='/readyz?verbose'
-```
-
-### 6.2 部署测试应用
-
-```bash
-# 创建一个测试 Deployment（5 副本，分布在不同节点）
-kubectl create deployment test-app \
-  --image=nginx:alpine \
-  --replicas=5
-
-# 等待 Pod 就绪
-kubectl rollout status deployment test-app
-
-# 查看 Pod 分布
-kubectl get pods -o wide -l app=test-app
-# 应该看到 Pod 分布在不同的 agent 节点上
-
-# 创建 Service
-kubectl expose deployment test-app --port=80 --type=NodePort
-
-# 从 Tailscale 网络访问
-NODE_PORT=$(kubectl get svc test-app -o jsonpath='{.spec.ports[0].nodePort}')
-curl http://100.64.0.10:$NODE_PORT  # 应返回 nginx 欢迎页
-```
-
-### 6.3 高可用测试
-
-```bash
-# 模拟 server-1 故障（停止容器）
-docker stop k3s-server-1
-
-# 验证集群仍可用
-kubectl get nodes -o wide
-# server-1 应显示 NotReady，但集群仍正常工作
-
-# 验证 etcd quorum（2/3 存活即可）
-# 在 server-2 或 server-3 上执行
-docker exec k3s-server-2 kubectl get nodes
-
-# 部署新应用（验证写操作仍可用）
-kubectl create deployment ha-test --image=nginx:alpine
-kubectl rollout status deployment ha-test
-
-# 恢复 server-1
-docker start k3s-server-1
-
-# 等待 server-1 重新加入
-kubectl get nodes -o wide
-# server-1 应恢复为 Ready 状态
-```
-
-### 6.4 清理测试资源
-
-```bash
-kubectl delete deployment test-app ha-test
-kubectl delete svc test-app
+# 验证
+kubectl get nodes
 ```
 
 ---
 
-## 7. 日常运维
+## 9. 日常运维
 
-### 7.1 添加新 Agent 节点
-
-在新机器上安装 Docker + Tailscale 后：
+### 9.1 Docker 容器管理（开发机）
 
 ```bash
-# 获取 token（从任意 server 节点）
-docker exec k3s-server-1 cat /var/lib/rancher/k3s/server/node-token
+# 查看状态
+docker ps | grep k3s
 
-# 启动 agent
-docker run -d \
-  --name k3s-agent-3 \
-  --privileged \
-  --network k3s-net \
-  --hostname k3s-agent-3 \
-  -v k3s-agent-3-data:/var/lib/rancher/k3s \
-  -v /dev/net/tun:/dev/net/tun \
-  -e K3S_TOKEN=<token> \
-  rancher/k3s:latest \
-  agent \
-  --server https://100.64.0.1:6443 \
+# 重启
+docker restart k3s-server k3s-agent
+
+# 查看日志
+docker logs -f k3s-server
+docker logs -f k3s-agent
+
+# 停止集群（开发机）
+docker stop k3s-server k3s-agent
+
+# 启动集群（开发机）
+docker start k3s-server k3s-agent
+
+# 彻底销毁（数据丢失）
+docker stop k3s-server k3s-agent
+docker rm k3s-server k3s-agent
+docker volume rm k3s-server-data k3s-agent-data
+```
+
+> `--restart unless-stopped` 参数确保 Docker 重启后 K3s 自动恢复。
+
+### 9.2 云服务器管理
+
+```bash
+# 查看 K3s 状态
+sudo systemctl status k3s-agent
+
+# 重启
+sudo systemctl restart k3s-agent
+
+# 查看日志
+sudo journalctl -u k3s-agent -f
+
+# 停止
+sudo systemctl stop k3s-agent
+```
+
+### 9.3 添加新的 Agent 节点
+
+在新机器上（已安装 Tailscale）：
+
+```bash
+# 原生安装
+curl -sfL https://get.k3s.io | K3S_URL=https://<开发机A-Tailscale-IP>:6443 \
+  K3S_TOKEN=<node-token> \
+  sh -s - agent \
   --node-ip=<新节点Tailscale-IP> \
   --flannel-backend=host-gw \
   --disable=traefik
 ```
 
-### 7.2 移除节点
+### 9.4 移除节点
 
 ```bash
-# 标记节点为不可调度
-kubectl drain k3s-agent-2 --ignore-daemonsets --delete-emptydir-data
+# 标记不可调度
+kubectl drain <node-name> --ignore-daemonsets --delete-emptydir-data
 
-# 从集群中删除
-kubectl delete node k3s-agent-2
+# 从集群删除
+kubectl delete node <node-name>
 
-# 在对应机器上停止并删除容器
-docker stop k3s-agent-2
-docker rm k3s-agent-2
-docker volume rm k3s-agent-2-data
+# 对应机器上停止服务
+# 开发机：docker stop k3s-agent
+# 云服务器：sudo systemctl stop k3s-agent && sudo /usr/local/bin/k3s-uninstall.sh
 ```
 
-### 7.3 K3s 升级
+### 9.5 etcd 备份
 
 ```bash
-# 1. 先升级第一个 server
-docker stop k3s-server-1
-docker rm k3s-server-1
-# 保留 volume 数据不删除
-
-# 2. 重新启动（使用新版本镜像）
-docker pull rancher/k3s:latest
-docker run -d \
-  --name k3s-server-1 \
-  --privileged \
-  --network k3s-net \
-  --hostname k3s-server-1 \
-  -v k3s-server-1-data:/var/lib/rancher/k3s \
-  -v /dev/net/tun:/dev/net/tun \
-  -p 6443:6443 \
-  -e K3S_TOKEN=my-secret-token \
-  rancher/k3s:latest \
-  server \
-  --cluster-init \
-  --tls-san=100.64.0.1 \
-  --tls-san=100.64.0.2 \
-  --tls-san=100.64.0.3 \
-  --node-ip=100.64.0.1 \
-  --flannel-backend=host-gw \
-  --disable=traefik
-
-# 3. 等待 server-1 Ready 后，依次升级其他 server
-# 4. 最后升级 agent 节点
-```
-
-> **升级顺序**：server 节点逐个升级 → agent 节点逐个升级。每次只升级一个节点，等它 Ready 后再升级下一个。
-
-### 7.4 etcd 备份与恢复
-
-```bash
-# 创建备份快照
-docker exec k3s-server-1 k3s etcd-snapshot save --name backup-$(date +%Y%m%d)
+# 在任意 server 节点上创建快照
+# 开发机：
+docker exec k3s-server k3s etcd-snapshot save --name backup-$(date +%Y%m%d)
 
 # 查看快照列表
-docker exec k3s-server-1 k3s etcd-snapshot list
+docker exec k3s-server k3s etcd-snapshot list
 
 # 导出备份文件
-docker cp k3s-server-1:/var/lib/rancher/k3s/server/db/snapshots/backup-*.db ./k3s-backup.db
-
-# 恢复（需要停止所有 K3s 容器后执行）
-docker stop k3s-server-1 k3s-server-2 k3s-server-3 k3s-agent-1 k3s-agent-2
-docker exec k3s-server-1 k3s server \
-  --cluster-init \
-  --etcd-restore /var/lib/rancher/k3s/server/db/snapshots/backup-*.db
+docker cp k3s-server:/var/lib/rancher/k3s/server/db/snapshots/ ./k3s-backup/
 ```
 
-### 7.5 查看日志
+### 9.6 K3s 升级
 
 ```bash
-# server 节点日志
-docker logs k3s-server-1
-docker logs -f k3s-server-1   # 实时跟踪
+# 开发机：拉取新版本镜像
+docker pull rancher/k3s:latest
 
-# agent 节点日志
-docker logs k3s-agent-1
+# 停止旧容器（保留 volume 数据）
+docker stop k3s-server k3s-agent
+docker rm k3s-server k3s-agent
+
+# 重新启动（使用相同参数，新镜像会自动生效）
+# 复用 Phase 1/3 的 docker run 命令
+
+# 云服务器：重新安装
+curl -sfL https://get.k3s.io | K3S_URL=https://<开发机A-Tailscale-IP>:6443 \
+  K3S_TOKEN=<node-token> \
+  sh -s - agent \
+  --node-ip=<云服务器Tailscale-IP> \
+  --flannel-backend=host-gw \
+  --disable=traefik
 ```
+
+> **升级顺序**：先升级 server 节点（开发机 A → 开发机 B），等 Ready 后再升级 agent 节点。
 
 ---
 
-## 8. 常见问题
+## 10. 常见问题
 
-### Q: 节点间 Tailscale IP 可以 ping 通，但 K3s 节点状态一直是 NotReady？
+### Q: 节点 Tailscale IP 可以 ping 通，但 K3s 节点一直 NotReady？
 
-**先检查 K3s 日志**。最常见原因是 `--node-ip` 没有正确设置，K3s 默认使用 Docker 网桥 IP（172.x.x.x）而非 Tailscale IP。在 K3s 容器内确认：
-
-```bash
-docker exec k3s-server-1 kubectl get nodes -o wide
-# INTERNAL-IP 列应显示 100.64.0.x
-```
-
-如果不是，删除容器后重新启动并确保 `--node-ip` 参数正确。
-
-### Q: 嵌入式 etcd 初始化失败，报 "no etcd candidates"？
-
-**确保第一个 server 节点使用了 `--cluster-init` 参数**。只有第一个 server 需要这个参数，后续 server 用 `--server` 加入即可。同时确保 K3s 版本 >= v1.19.1（嵌入式 etcd 从该版本开始稳定）。
-
-### Q: Agent 节点加入时报 "certificateAuthorities data is complete, but content doesn't match"？
-
-**token 不一致**。确保所有节点使用完全相同的 `K3S_TOKEN`。token 包含 CA 证书哈希，哪怕差一个字符都会失败。
-
-### Q: Flannel host-gw 模式下跨节点 Pod 通信不通？
-
-**检查 Tailscale 的 IP 转发是否开启**。在每台机器上：
+**最常见原因是 `--node-ip` 没有正确设置**。K3s 默认使用 Docker 网桥 IP（172.x.x.x）而非 Tailscale IP。
 
 ```bash
 # 检查
+kubectl get nodes -o wide
+# INTERNAL-IP 列应该显示 100.x.x.x
+```
+
+如果不是，删除容器后重新启动，确保 `--node-ip` 参数指向正确的 Tailscale IP。
+
+### Q: 开发机关机后再开机，集群能自动恢复吗？
+
+**能。** Docker 设置了 `--restart unless-stopped`，开机后 Docker 自动启动 K3s 容器，etcd 数据在 volume 中持久化，集群自动恢复。云服务器的 K3s agent 是 systemd 服务，同样开机自启。
+
+### Q: 开发机都关了，云服务器上的 Pod 还能运行吗？
+
+**能运行，但不能调度新 Pod。** 已有的 Pod 继续运行，因为 kubelet 是本地的。但 `kubectl apply` 等需要 API Server 的操作会失败（API Server 在开发机上）。等开发机开机后自动恢复。
+
+### Q: 嵌入式 etcd 初始化失败？
+
+**确保第一个 server 节点使用了 `--cluster-init` 参数**。只有第一个 server 需要这个参数。同时确保 K3s 版本 >= v1.19.1。
+
+### Q: kubeconfig 中的 server 地址是 127.0.0.1？
+
+```bash
+sed -i 's/127.0.0.1:6443/<开发机A-Tailscale-IP>:6443/g' ~/.kube/config
+```
+
+### Q: Flannel host-gw 下跨节点 Pod 通信不通？
+
+**检查 Tailscale 的 IP 转发是否开启**：
+
+```bash
 sysctl net.ipv4.ip_forward
 # 如果是 0：
 sudo sysctl -w net.ipv4.ip_forward=1
-
-# 永久生效
 echo "net.ipv4.ip_forward = 1" | sudo tee -a /etc/sysctl.conf
 sudo sysctl -p
 ```
 
-同时检查 Tailscale 是否启用了子网路由：
+### Q: 两个 server 的 hostname 都叫 k3s-server，怎么区分？
+
+K3s 使用 node name（不是 hostname）区分节点。Docker 容器的 hostname 会成为 K3s 的 node name。如果两个 server 都叫 `k3s-server`，会冲突。
+
+**解决方案**：给每个节点设置不同的 `--hostname`：
 
 ```bash
-tailscale status
-# 确认没有 "subnet routes not enabled" 的警告
+# 开发机 A
+docker run ... --hostname k3s-server-company ...
+
+# 开发机 B
+docker run ... --hostname k3s-server-home ...
 ```
 
-### Q: kubeconfig 中的 server 地址是 127.0.0.1，远程无法访问？
+### Q: 2C/2G 的云服务器跑 K3s agent 够吗？
 
-**需要修改 kubeconfig 中的 server 地址**。将 `127.0.0.1:6443` 替换为任意一个 server 节点的 Tailscale IP：
+**勉强够用。** K3s agent 约占 300~500MB 内存。2GB 机器上剩余约 1.5GB，可以运行轻量 Pod（如 nginx、小型 API）。不适合运行 Elasticsearch、Redis 等内存密集型应用。
 
-```bash
-sed -i 's/127.0.0.1:6443/100.64.0.1:6443/g' ~/.kube/config
-```
+### Q: 怎么从外网访问集群里的 Service？
 
-### Q: 集群只有 2 台机器，怎么凑 3 个 server？
-
-在其中一台性能较好的机器上运行 2 个 server 容器（不同端口）：
-
-```bash
-# 机器 A：运行 server-1 + server-2
-docker run -d --name k3s-server-1 ... -p 6443:6443 ...
-docker run -d --name k3s-server-2 ... --server https://100.64.0.1:6443 ...
-
-# 机器 B：运行 server-3 + agent-1
-docker run -d --name k3s-server-3 ... --server https://100.64.0.1:6443 ...
-docker run -d --name k3s-agent-1 ... --server https://100.64.0.1:6443 ...
-```
-
-> 2 台机器的 3 server 方案在生产中不推荐（无法实现真正的物理隔离容灾），但用于学习和测试完全够用。
-
-### Q: 如何从外部访问集群的 Service/Ingress？
-
-有两种方式：
-
-1. **Tailscale 直接访问**：在你自己的设备上安装 Tailscale，加入同一个 tailnet，然后直接用 NodePort 或 ClusterIP + 端口转发访问
-2. **Tailscale Funnel**：将 Service 暴露到公网（需要 Tailscale Funnel 功能）
-
-```bash
-# 方式 1：本地 kubectl port-forward
-kubectl port-forward svc/test-app 8080:80
-
-# 方式 2：Tailscale Exit Node（让本地设备借用集群的网络出口）
-# 在集群节点上：
-sudo tailscale up --advertise-exit-node
-
-# 在本地设备上：
-sudo tailscale up --exit-node=100.64.0.1
-```
+1. **Tailscale 直接访问**：你的设备加入同一个 tailnet，直接用 NodePort 访问
+2. **kubectl port-forward**：`kubectl port-forward svc/my-app 8080:80`
+3. **将来加 Ingress**：安装 Traefik 或 Nginx Ingress Controller，配置域名路由
 
 ---
 
-## 9. 参考
+## 11. 参考
 
 - [K3s 官方文档](https://docs.k3s.io/)
 - [K3s HA 安装指南](https://docs.k3s.io/installation/ha)
 - [K3s 嵌入式 etcd](https://docs.k3s.io/datastore)
-- [k3d 官方文档](https://k3d.io/)
 - [K3s Docker 镜像](https://hub.docker.com/r/rancher/k3s)
+- [k3d 官方文档](https://k3d.io/)（单机多节点模拟工具）
 - [Tailscale 完全指南](../tools/network/tailscale-完全指南.md)（本仓库）
 - [Kubernetes 开发者学习手册](README.md)（本仓库）
