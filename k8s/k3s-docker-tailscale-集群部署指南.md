@@ -147,6 +147,34 @@ sudo ufw allow 10250/tcp
 
 > 如果 Flannel 使用 `host-gw` 后端（本文推荐），可以不开放 8472/UDP。K3s 端口可以只放 Tailscale 内网，用 ACL 限制访问，更安全。
 
+### 2.4 配置镜像加速（所有机器）
+
+K3s 使用内置的 containerd，镜像加速配置文件是 `/etc/rancher/k3s/registries.yaml`。
+
+> **注意**：必须写到 `/etc/rancher/k3s/registries.yaml`，写到 `/etc/containerd/config.toml` 对 K3s 无效（那是系统 containerd 的配置，K3s 不认）。
+
+```bash
+# 所有机器都执行
+sudo mkdir -p /etc/rancher/k3s
+sudo tee /etc/rancher/k3s/registries.yaml << 'EOF'
+mirrors:
+  "docker.io":
+    endpoint:
+      - "https://docker.1ms.run"
+      - "https://docker.xuanyuan.me"
+  "ghcr.io":
+    endpoint:
+      - "https://ghcr.xuanyuan.me"
+  "registry.k8s.io":
+    endpoint:
+      - "https://registry.k8s.xuanyuan.me"
+EOF
+
+# 重启 K3s 使配置生效
+# 云服务器：sudo systemctl restart k3s
+# 开发机：docker compose restart
+```
+
 ---
 
 ## 3. Phase 1：云服务器 B（sv1，集群 leader）
