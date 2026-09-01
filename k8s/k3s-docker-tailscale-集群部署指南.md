@@ -167,6 +167,8 @@ K3S_NODE_HOST=pc1                    # 公司开发机的 Tailscale 节点名
 >
 > **重要**：集群第一次启动成功后，**必须去掉 `--cluster-init`**，否则 volume 丢失时会意外创建空集群。操作方法：编辑 `.env`，把 `--cluster-init` 从 `K3S_SERVER_FLAGS` 中删除，然后 `docker compose down && docker compose up -d` 重启生效。
 
+> **网络模式**：docker-compose 使用 `network_mode: host`（共享宿主机网络），这样容器内可以解析 Tailscale 节点名（pc1, pc2 等），K3s 也能直接访问宿主机网卡。
+
 ### 3.3 启动集群
 
 ```bash

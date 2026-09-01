@@ -15,6 +15,11 @@
 # Tailscale 节点名可以直接用，MagicDNS 会自动解析。
 # 例如节点名是 pc1，直接写 pc1 就行，不用记 IP。
 #
+# 网络模式用 host（共享宿主机网络），原因：
+#   1. 容器内需要解析 Tailscale MagicDNS（pc1, pc2 等）
+#   2. K3s 需要直接访问宿主机网卡（Flannel/etcd 通信）
+#   3. host 网络性能最好，没有 Docker NAT 开销
+#
 # 停止/启动：
 #   docker compose stop     # 停止（保留数据）
 #   docker compose start    # 启动
@@ -27,10 +32,7 @@ services:
     hostname: ${K3S_HOSTNAME:-k3s-server}
     privileged: true
     restart: unless-stopped
-    networks:
-      - k3s-net
-    ports:
-      - "6443:6443"
+    network_mode: host
     volumes:
       - k3s-server-data:/var/lib/rancher/k3s
       - /dev/net/tun:/dev/net/tun
@@ -50,8 +52,7 @@ services:
     hostname: ${K3S_AGENT_HOSTNAME:-k3s-agent}
     privileged: true
     restart: unless-stopped
-    networks:
-      - k3s-net
+    network_mode: host
     depends_on:
       k3s-server:
         condition: service_healthy
@@ -61,10 +62,6 @@ services:
     environment:
       - K3S_TOKEN=${K3S_TOKEN}
     command: agent --server https://${K3S_SERVER_HOST:-localhost}:6443 ${K3S_AGENT_FLAGS}
-
-networks:
-  k3s-net:
-    driver: bridge
 
 volumes:
   k3s-server-data:
