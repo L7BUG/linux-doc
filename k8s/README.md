@@ -2,7 +2,7 @@
 
 > 🎯 面向开发人员：从本地搭建到把应用部署到 K8s 的完整路径
 > 🖥️ 环境：Arch Linux，单机学习（minikube/k3d）
-> 📝 作者：L7-BUG | 更新：2026-08-14
+> 📝 作者：L7-BUG | 更新：2026-09-01
 
 ---
 
@@ -46,6 +46,16 @@ Helm 是什么（K8s 的 apt）→ Chart 结构 → 一键部署完整应用 →
 
 ---
 
+## 进阶内容
+
+| 文档 | 简介 | 前置 |
+|------|------|------|
+| [Istio 服务网格详解](istio详解.md) | K8s 微服务的"智能管家"——流量管理、熔断、安全、可观测性 | 完成 5 章学习 |
+| [K8s + Istio + Spring Boot 实战教程](istio-springboot.md) | 在 K8s 上用 Istio 管理 Spring Boot 微服务——流量管理、安全、可观测性 | 完成 Istio 详解 |
+| [K3s + Docker + Tailscale 多节点集群部署指南](k3s-docker-tailscale-集群部署指南.md) | 用 Docker 容器运行 K3s，组建 3 控制面 + 工作节点的高可用集群 | 了解 K8s 基础概念 |
+
+---
+
 ## 前置知识要求
 
 - ✅ 会用 Linux 终端（你已经有了）
@@ -59,14 +69,7 @@ Helm 是什么（K8s 的 apt）→ Chart 结构 → 一键部署完整应用 →
 - kubectl 命令参考：https://kubernetes.io/docs/reference/kubectl/cheatsheet/
 - killerCoda 在线实验：https://killercoda.com/
 - Helm 官方文档：https://helm.sh/zh/docs/
-
----
-
-## 实战部署指南
-
-| 文档 | 简介 |
-|------|------|
-| [K3s + Docker + Tailscale 多节点集群部署指南](k3s-docker-tailscale-集群部署指南.md) | 用 Docker 容器运行 K3s，组建 3 控制面 + 工作节点的高可用集群，节点间通过 Tailscale 虚拟局域网互联 |
+- K3s 官方文档：https://docs.k3s.io/
 
 ---
 
