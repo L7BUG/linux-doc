@@ -138,54 +138,55 @@ sudo ufw allow 10250/tcp
 
 ## 3. Phase 1：公司开发机（第一个 Server）
 
-### 3.1 拉取镜像 + 创建网络
+### 3.1 准备 docker-compose 文件
 
 ```bash
-docker pull rancher/k3s:latest
-docker network create k3s-net
+# 创建工作目录
+mkdir -p ~/k3s-cluster && cd ~/k3s-cluster
+
+# 复制 docker-compose 文件（从 linux-doc 仓库获取）
+# 文件位置：k8s/docker-compose/
+cp /path/to/docker-compose.yml .
+cp /path/to/.env.company .env
 ```
 
-### 3.2 启动 Server（集群初始化）
+### 3.2 修改 .env 配置
 
 ```bash
-docker run -d \
-  --name k3s-server \
-  --privileged \
-  --network k3s-net \
-  --hostname k3s-server-company \
-  --restart unless-stopped \
-  -v k3s-server-data:/var/lib/rancher/k3s \
-  -v /dev/net/tun:/dev/net/tun \
-  -p 6443:6443 \
-  -e K3S_TOKEN=k3s-cluster-token-2026 \
-  rancher/k3s:latest \
-  server \
-  --cluster-init \
-  --tls-san=<公司Tailscale-IP> \
-  --tls-san=<家里Tailscale-IP> \
-  --tls-san=<云服务器B-Tailscale-IP> \
-  --node-ip=<公司Tailscale-IP> \
-  --flannel-backend=host-gw \
-  --disable=traefik
+vim .env
 ```
 
-> **替换占位符**：`<公司Tailscale-IP>` 等换成实际的 100.x.x.x 地址。
-
-### 3.3 等待 Server 就绪
+**必须修改的值**：
 
 ```bash
-docker logs -f k3s-server
-# 看到 "Wrote kubeconfig" 说明启动成功
+# 把下面的 IP 替换成你实际的 Tailscale IP
+K3S_TOKEN=k3s-cluster-token-2026    # 自定义一个复杂字符串
+K3S_NODE_IP=100.64.0.1               # 公司开发机的 Tailscale IP
 ```
 
-### 3.4 获取节点令牌
+> `.env.company` 模板中已预设了 `--cluster-init` 参数，公司开发机是第一个 server，负责初始化集群。
+
+### 3.3 启动集群
+
+```bash
+docker compose up -d
+```
+
+### 3.4 等待 Server 就绪
+
+```bash
+docker compose logs -f k3s-server
+# 看到 "kubectl get nodes" 有 Ready 输出后 Ctrl+C
+```
+
+### 3.5 获取节点令牌
 
 ```bash
 docker exec k3s-server cat /var/lib/rancher/k3s/server/node-token
-# 记下这个令牌
+# 记下这个令牌，云服务器加入时需要
 ```
 
-### 3.5 配置 kubectl
+### 3.6 配置 kubectl
 
 ```bash
 mkdir -p ~/.kube
@@ -201,33 +202,37 @@ kubectl get nodes
 
 ## 4. Phase 2：家里开发机（第二个 Server）
 
-```bash
-# 拉取镜像 + 创建网络
-docker pull rancher/k3s:latest
-docker network create k3s-net
+### 4.1 准备 docker-compose 文件
 
-# 启动 Server（加入已有集群）
-docker run -d \
-  --name k3s-server \
-  --privileged \
-  --network k3s-net \
-  --hostname k3s-server-home \
-  --restart unless-stopped \
-  -v k3s-server-data:/var/lib/rancher/k3s \
-  -v /dev/net/tun:/dev/net/tun \
-  -e K3S_TOKEN=k3s-cluster-token-2026 \
-  rancher/k3s:latest \
-  server \
-  --server https://<公司Tailscale-IP>:6443 \
-  --tls-san=<公司Tailscale-IP> \
-  --tls-san=<家里Tailscale-IP> \
-  --tls-san=<云服务器B-Tailscale-IP> \
-  --node-ip=<家里Tailscale-IP> \
-  --flannel-backend=host-gw \
-  --disable=traefik
+```bash
+mkdir -p ~/k3s-cluster && cd ~/k3s-cluster
+cp /path/to/docker-compose.yml .
+cp /path/to/.env.home .env
 ```
 
-> **关键区别**：没有 `--cluster-init`，用 `--server` 指向公司开发机。
+### 4.2 修改 .env 配置
+
+```bash
+vim .env
+```
+
+**必须修改的值**：
+
+```bash
+K3S_TOKEN=k3s-cluster-token-2026    # 和公司开发机保持一致！
+K3S_SERVER_IP=100.64.0.1             # 公司开发机的 Tailscale IP
+K3S_NODE_IP=100.64.0.2               # 家里开发机自己的 Tailscale IP
+```
+
+> `.env.home` 模板中预设了 `--server https://...` 参数，家里开发机作为第二个 server 加入已有集群。
+
+### 4.3 启动
+
+```bash
+docker compose up -d
+```
+
+> **注意**：必须先启动公司开发机并等 Ready 后，再启动家里开发机。
 
 ---
 
@@ -261,47 +266,13 @@ kubectl get nodes -o wide
 
 ## 6. Phase 4：Agent 节点加入
 
-### 6.1 公司开发机的 Agent
+### 6.1 开发机 Agent（已包含在 docker-compose 中）
 
-```bash
-docker run -d \
-  --name k3s-agent \
-  --privileged \
-  --network k3s-net \
-  --hostname k3s-agent-company \
-  --restart unless-stopped \
-  -v k3s-agent-data:/var/lib/rancher/k3s \
-  -v /dev/net/tun:/dev/net/tun \
-  -e K3S_TOKEN=k3s-cluster-token-2026 \
-  rancher/k3s:latest \
-  agent \
-  --server https://<公司Tailscale-IP>:6443 \
-  --node-ip=<公司Tailscale-IP> \
-  --flannel-backend=host-gw \
-  --disable=traefik
-```
+开发机的 agent 已经在 `docker compose up -d` 时一起启动了，不需要额外操作。
 
-### 6.2 家里开发机的 Agent
+> `docker-compose.yml` 中的 `k3s-agent` 服务会等 server 健康检查通过后自动加入集群。
 
-```bash
-docker run -d \
-  --name k3s-agent \
-  --privileged \
-  --network k3s-net \
-  --hostname k3s-agent-home \
-  --restart unless-stopped \
-  -v k3s-agent-data:/var/lib/rancher/k3s \
-  -v /dev/net/tun:/dev/net/tun \
-  -e K3S_TOKEN=k3s-cluster-token-2026 \
-  rancher/k3s:latest \
-  agent \
-  --server https://<公司Tailscale-IP>:6443 \
-  --node-ip=<家里Tailscale-IP> \
-  --flannel-backend=host-gw \
-  --disable=traefik
-```
-
-### 6.3 云服务器 A（轻量 Agent）
+### 6.2 云服务器 A（轻量 Agent）
 
 ```bash
 curl -sfL https://get.k3s.io | K3S_URL=https://<公司Tailscale-IP>:6443 \
@@ -312,7 +283,7 @@ curl -sfL https://get.k3s.io | K3S_URL=https://<公司Tailscale-IP>:6443 \
   --disable=traefik
 ```
 
-### 6.4 最终验证
+### 6.3 最终验证
 
 ```bash
 kubectl get nodes -o wide
@@ -410,11 +381,15 @@ kubectl get nodes
 
 ## 9. 日常运维
 
-### 9.1 Docker 容器管理（开发机）
+### 9.1 Docker Compose 管理（开发机）
 
 ```bash
+cd ~/k3s-cluster
+
 docker compose ps                    # 查看状态
-docker compose logs -f k3s-server    # 查看日志
+docker compose logs -f k3s-server    # Server 日志
+docker compose logs -f k3s-agent     # Agent 日志
+docker compose restart               # 重启
 docker compose stop                  # 停止（保留数据）
 docker compose start                 # 启动
 docker compose down -v               # 销毁（数据丢失！）
