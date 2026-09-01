@@ -46,6 +46,12 @@
 | [Hermes 完全指南](tools/ai/hermes-完全指南.md) | Hermes Agent 全解：架构与核心特性（技能/记忆/网关）、安装配置、CLI/TUI/Telegram 使用、常用命令、备份更新等维护 |
 | [正则表达式入门指南](tools/dev/正则表达式-入门指南.md) | 正则从零到实战：字符类/量词/锚点/分组语法、grep/sed/vim/Python 用法、BRE/ERE/PCRE 差异、实用示例库 |
 
+### Kubernetes
+
+| 文档 | 简介 |
+|------|------|
+| [K3s + Docker + Tailscale 多节点集群部署指南](k8s/k3s-docker-tailscale-集群部署指南.md) | 用 Docker 容器运行 K3s，组建 3 控制面 + 工作节点的高可用集群，节点间通过 Tailscale 虚拟局域网互联 |
+
 ### Linux 标准与基础
 
 | 文档 | 简介 |
