@@ -157,8 +157,7 @@ sv1 是 7×24 在线的云服务器，作为集群第一个 server，负责初�
 
 ```bash
 # 在 sv1 上执行（Debian）
-curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server" \
-  sh -s - \
+curl -sfL https://rancher-mirror.rancher.cn/k3s/k3s-install.sh | INSTALL_K3S_MIRROR=cn INSTALL_K3S_EXEC="server" sh -s - \
   --cluster-init \
   --tls-san=sv1 --tls-san=pc1 --tls-san=pc2 \
   --node-ip=<sv1的Tailscale-IP> \
@@ -338,9 +337,7 @@ docker compose up -d
 
 ```bash
 # 在 sv2 上执行（Debian）
-curl -sfL https://get.k3s.io | K3S_URL=https://sv1:6443 \
-  K3S_TOKEN=<node-token> \
-  sh -s - agent \
+curl -sfL https://rancher-mirror.rancher.cn/k3s/k3s-install.sh | INSTALL_K3S_MIRROR=cn K3S_URL=https://sv1:6443 K3S_TOKEN=<node-token> sh -s - agent \
   --node-ip=<sv2的Tailscale-IP> \
   --flannel-backend=host-gw \
   --disable=traefik
@@ -486,9 +483,7 @@ docker exec k3s-server k3s etcd-snapshot list
 ```bash
 # 新 Agent（原生安装）
 # --node-ip 必须用 IP，--server 可以用主机名
-curl -sfL https://get.k3s.io | K3S_URL=https://pc1:6443 \
-  K3S_TOKEN=<node-token> \
-  sh -s - agent \
+curl -sfL https://rancher-mirror.rancher.cn/k3s/k3s-install.sh | INSTALL_K3S_MIRROR=cn K3S_URL=https://pc1:6443 K3S_TOKEN=<node-token> sh -s - agent \
   --node-ip=<新节点Tailscale-IP> \
   --flannel-backend=host-gw \
   --disable=traefik
