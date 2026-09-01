@@ -337,10 +337,9 @@ docker compose up -d
 
 ```bash
 # 在 sv2 上执行（Debian）
-# 注意：agent 不认 --flannel-backend，不要加
+# 注意：agent 不认 --flannel-backend 和 --disable，不要加
 curl -sfL https://rancher-mirror.rancher.cn/k3s/k3s-install.sh | INSTALL_K3S_MIRROR=cn K3S_URL=https://<sv1的Tailscale-IP>:6443 K3S_TOKEN=<node-token> sh -s - agent \
-  --node-ip=<sv2的Tailscale-IP> \
-  --disable=traefik
+  --node-ip=<sv2的Tailscale-IP>
 ```
 
 ### 6.2 最终验证
@@ -483,10 +482,9 @@ docker exec k3s-server k3s etcd-snapshot list
 ```bash
 # 新 Agent（原生安装）
 # --node-ip 必须用 IP，--server 可以用主机名
-# 注意：agent 不认 --flannel-backend，不要加
+# 注意：agent 不认 --flannel-backend 和 --disable，不要加
 curl -sfL https://rancher-mirror.rancher.cn/k3s/k3s-install.sh | INSTALL_K3S_MIRROR=cn K3S_URL=https://<sv1的Tailscale-IP>:6443 K3S_TOKEN=<node-token> sh -s - agent \
-  --node-ip=<新节点Tailscale-IP> \
-  --disable=traefik
+  --node-ip=<新节点Tailscale-IP>
 ```
 
 ### 9.5 移除节点
@@ -535,9 +533,9 @@ etcd quorum 丢失，集群暂停。但**数据不丢失**——etcd 数据在 v
 
 **不能。** K3s 的 `--node-ip` 参数只接受 IP 地址格式，不接受主机名。能用主机名的参数只有 `--server` 和 `--tls-san`。`--node-ip` 必须填 Tailscale 分配的 IP（`tailscale status` 查看）。
 
-### Q: `--flannel-backend` 能用在 agent 上吗？
+### Q: `--flannel-backend` 和 `--disable` 能用在 agent 上吗？
 
-**不能。** `--flannel-backend` 是 server 参数，agent 不认。agent 的网络配置跟随 server，不需要单独指定。docker-compose 的 `.env` 文件中，`K3S_AGENT_FLAGS` 不要包含 `--flannel-backend`。
+**不能。** 这两个都是 server 参数，agent 不认。agent 的网络配置跟随 server，不需要单独指定。docker-compose 的 `.env` 文件中，`K3S_AGENT_FLAGS` 只能包含 `--node-ip` 和 `--server`，不要加其他参数。
 
 ### Q: kubeconfig 地址是 127.0.0.1？
 
