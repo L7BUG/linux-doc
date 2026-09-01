@@ -45,12 +45,25 @@
 
 | 机器 | 配置 | 角色 | 部署方式 | 在线情况 |
 |------|------|------|---------|---------|
+| 云服务器 B | 4C/4GB | **Server（leader）+ Agent** | 原生 K3s | 7×24 |
 | 公司开发机 | 6C/12T + 32GB | **Server + Agent** | Docker 容器 | 很少关机 |
 | 家里开发机 | 6C/12T + 32GB | **Server + Agent** | Docker 容器 | 可能关机 |
-| 云服务器 B | 4C/4GB | **Server + Agent** | 原生 K3s | 7×24 |
 | 云服务器 A | 2C/2GB | **Agent** | 原生 K3s | 7×24 |
 
-### 1.3 为什么是 3 server HA
+### 1.3 为什么云服务器 B 做 leader
+
+集群的第一个 server（leader）负责初始化 etcd，其他节点通过它加入。**选 sv1 做 leader 而不是开发机的原因**：
+
+| | sv1（云服务器 B） | 开发机 |
+|---|---|---|
+| 在线时间 | 7×24 永远在线 | 可能关机 |
+| 网络 | 公网 IP，稳定 | 内网，Tailscale 打洞 |
+| API Server 可达性 | 永远可达 | 关机后不可达 |
+| kubeconfig 指向 | 始终有效 | 关机后失效 |
+
+**sv1 做 leader 的好处**：开发机关机后，API Server（在 sv1 上）仍然运行，kubectl 仍然可用，只是无法调度新 Pod 到开发机上。
+
+### 1.4 为什么是 3 server HA
 
 公司开发机很少关机 + 两台云服务器永远在线 → **3 台 server 大部分时间都在线**：
 
@@ -63,7 +76,7 @@
 
 **关键优势**：家里关机时，公司开发机 + 云服务器 B 仍然提供 2/3 quorum，集群正常运行。
 
-### 1.4 资源规划
+### 1.5 资源规划
 
 | 机器 | K3s Server 占用 | K3s Agent 占用 | 剩余可用 |
 |------|----------------|---------------|---------|
@@ -136,66 +149,47 @@ sudo ufw allow 10250/tcp
 
 ---
 
-## 3. Phase 1：公司开发机（第一个 Server）
+## 3. Phase 1：云服务器 B（sv1，集群 leader）
 
-### 3.1 准备 docker-compose 文件
+sv1 是 7×24 在线的云服务器，作为集群第一个 server，负责初始化 etcd。
 
-```bash
-# 创建工作目录
-mkdir -p ~/k3s-cluster && cd ~/k3s-cluster
-
-# 复制 docker-compose 文件（从 linux-doc 仓库获取）
-# 文件位置：k8s/docker-compose/
-cp /path/to/docker-compose.yml .
-cp /path/to/.env.company .env
-```
-
-### 3.2 修改 .env 配置
+### 3.1 安装 K3s（原生，不用 Docker）
 
 ```bash
-vim .env
+# 在 sv1 上执行（Debian）
+curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server" \
+  sh -s - \
+  --cluster-init \
+  --tls-san=sv1 --tls-san=pc1 --tls-san=pc2 \
+  --node-ip=<sv1的Tailscale-IP> \
+  --flannel-backend=host-gw \
+  --disable=traefik
 ```
 
-**必须确认的值**：
+> **替换占位符**：`<sv1的Tailscale-IP>` 换成实际 IP（`tailscale status` 查看）。
+
+### 3.2 等待 Server 就绪
 
 ```bash
-K3S_TOKEN=k3s-cluster-token-2026    # 自定义一个复杂字符串
-K3S_NODE_IP=100.64.0.1               # pc1 的 Tailscale IP（tailscale status 查看）
+# 查看节点状态
+sudo k3s kubectl get nodes
+# 看到 sv1 状态为 Ready 说明启动成功
 ```
 
-> `.env.company` 模板中已预设了 `--cluster-init` 参数，公司开发机是第一个 server，负责初始化集群。`--server` 和 `--tls-san` 可以用 Tailscale 主机名，但 `--node-ip` 必须用 IP 地址（K3s 硬限制）。
->
-> **重要**：集群第一次启动成功后，**必须去掉 `--cluster-init`**，否则 volume 丢失时会意外创建空集群。操作方法：编辑 `.env`，把 `--cluster-init` 从 `K3S_SERVER_FLAGS` 中删除，然后 `docker compose down && docker compose up -d` 重启生效。
-
-> **网络模式**：docker-compose 使用 `network_mode: host`（共享宿主机网络），这样容器内可以解析 Tailscale 节点名（pc1, pc2 等），K3s 也能直接访问宿主机网卡。
-
-### 3.3 启动集群
+### 3.3 获取节点令牌
 
 ```bash
-docker compose up -d
+sudo cat /var/lib/rancher/k3s/server/node-token
+# 记下这个令牌，其他节点加入时需要
 ```
 
-### 3.4 等待 Server 就绪
-
-```bash
-docker compose logs -f k3s-server
-# 看到 "kubectl get nodes" 有 Ready 输出后 Ctrl+C
-```
-
-### 3.5 获取节点令牌
-
-```bash
-docker exec k3s-server cat /var/lib/rancher/k3s/server/node-token
-# 记下这个令牌，云服务器加入时需要
-```
-
-### 3.6 配置 kubectl
+### 3.4 配置 kubectl
 
 ```bash
 mkdir -p ~/.kube
-docker cp k3s-server:/etc/rancher/k3s/k3s.yaml ~/.kube/config
-sed -i 's/127.0.0.1:6443/pc1:6443/g' ~/.kube/config
-chmod 600 ~/.kube/config
+sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
+sudo chown $USER:$USER ~/.kube/config
+sed -i 's/127.0.0.1:6443/sv1:6443/g' ~/.kube/config
 
 # 验证
 kubectl get nodes
@@ -203,14 +197,14 @@ kubectl get nodes
 
 ---
 
-## 4. Phase 2：家里开发机（第二个 Server）
+## 4. Phase 2：公司开发机（pc1，第二个 Server）
 
 ### 4.1 准备 docker-compose 文件
 
 ```bash
 mkdir -p ~/k3s-cluster && cd ~/k3s-cluster
 cp /path/to/docker-compose.yml .
-cp /path/to/.env.home .env
+cp /path/to/.env.company .env
 ```
 
 ### 4.2 修改 .env 配置
@@ -222,11 +216,11 @@ vim .env
 **必须确认的值**：
 
 ```bash
-K3S_TOKEN=k3s-cluster-token-2026    # 和公司开发机保持一致！
-K3S_NODE_IP=100.64.0.2               # pc2 的 Tailscale IP
+K3S_TOKEN=k3s-cluster-token-2026    # 和 sv1 上的令牌一致！
+K3S_NODE_IP=100.64.0.1               # pc1 的 Tailscale IP
 ```
 
-> `.env.home` 模板中预设了 `--server https://pc1:6443` 参数，家里开发机作为第二个 server 加入已有集群。
+> `.env.company` 模板中预设了 `--server https://sv1:6443`，指向集群 leader。
 
 ### 4.3 启动
 
@@ -234,51 +228,117 @@ K3S_NODE_IP=100.64.0.2               # pc2 的 Tailscale IP
 docker compose up -d
 ```
 
-> **注意**：必须先启动公司开发机并等 Ready 后，再启动家里开发机。
-
----
-
-## 5. Phase 3：云服务器 B（第三个 Server）
-
-云服务器 B 使用原生 K3s 安装（不用 Docker），作为第三个 server 节点：
+### 4.4 等待就绪 + 配置 kubectl
 
 ```bash
-# 在云服务器 B（sv1）上执行（Debian）
-# --node-ip 必须用 IP，--server 和 --tls-san 可以用主机名
-curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server" \
-  sh -s - \
-  --server https://pc1:6443 \
-  --tls-san=pc1 --tls-san=pc2 --tls-san=sv1 \
-  --node-ip=<sv1的Tailscale-IP> \
-  --flannel-backend=host-gw \
-  --disable=traefik
-```
+# 等待启动
+docker compose logs -f k3s-server
+# 看到 Ready 后 Ctrl+C
 
-> 原生安装的 K3s 用 systemd 管理，kubeconfig 在 `/etc/rancher/k3s/k3s.yaml`。
+# 配置 kubectl
+mkdir -p ~/.kube
+docker cp k3s-server:/etc/rancher/k3s/k3s.yaml ~/.kube/config
+sed -i 's/127.0.0.1:6443/sv1:6443/g' ~/.kube/config
+chmod 600 ~/.kube/config
 
-### 验证 3 个 Server
-
-```bash
-kubectl get nodes -o wide
-# 应该看到 3 个 server 节点全部 Ready
+# 验证（应该看到 sv1 和 pc1 都 Ready）
+kubectl get nodes
 ```
 
 ---
 
-## 6. Phase 4：Agent 节点加入
+## 4. Phase 2：公司开发机（pc1，第二个 Server）
 
-### 6.1 开发机 Agent（已包含在 docker-compose 中）
-
-开发机的 agent 已经在 `docker compose up -d` 时一起启动了，不需要额外操作。
-
-> `docker-compose.yml` 中的 `k3s-agent` 服务会等 server 健康检查通过后自动加入集群。
-
-### 6.2 云服务器 A（轻量 Agent）
+### 4.1 准备 docker-compose 文件
 
 ```bash
-# 云服务器 A（sv2）— Agent（原生安装）
-# --node-ip 必须用 IP
-curl -sfL https://get.k3s.io | K3S_URL=https://pc1:6443 \
+mkdir -p ~/k3s-cluster && cd ~/k3s-cluster
+cp /path/to/docker-compose.yml .
+cp /path/to/.env.company .env
+```
+
+### 4.2 修改 .env 配置
+
+```bash
+vim .env
+```
+
+**必须确认的值**：
+
+```bash
+K3S_TOKEN=k3s-cluster-token-2026    # 和 sv1 上的令牌一致！
+K3S_NODE_IP=100.64.0.1               # pc1 的 Tailscale IP
+```
+
+> `.env.company` 模板中预设了 `--server https://sv1:6443`，指向集群 leader。
+
+### 4.3 启动
+
+```bash
+docker compose up -d
+```
+
+### 4.4 等待就绪 + 配置 kubectl
+
+```bash
+# 等待启动
+docker compose logs -f k3s-server
+# 看到 Ready 后 Ctrl+C
+
+# 配置 kubectl
+mkdir -p ~/.kube
+docker cp k3s-server:/etc/rancher/k3s/k3s.yaml ~/.kube/config
+sed -i 's/127.0.0.1:6443/sv1:6443/g' ~/.kube/config
+chmod 600 ~/.kube/config
+
+# 验证（应该看到 sv1 和 pc1 都 Ready）
+kubectl get nodes
+```
+
+---
+
+## 5. Phase 3：家里开发机（pc2，第三个 Server）
+
+### 5.1 准备 docker-compose 文件
+
+```bash
+mkdir -p ~/k3s-cluster && cd ~/k3s-cluster
+cp /path/to/docker-compose.yml .
+cp /path/to/.env.home .env
+```
+
+### 5.2 修改 .env 配置
+
+```bash
+vim .env
+```
+
+**必须确认的值**：
+
+```bash
+K3S_TOKEN=k3s-cluster-token-2026    # 和 sv1 上的令牌一致！
+K3S_NODE_IP=100.64.0.2               # pc2 的 Tailscale IP
+```
+
+> `.env.home` 模板中预设了 `--server https://sv1:6443`，指向集群 leader。
+
+### 5.3 启动
+
+```bash
+docker compose up -d
+```
+
+> **启动顺序**：sv1 → pc1 → pc2，每个等 Ready 后再启动下一个。
+
+---
+
+## 6. Phase 4：云服务器 A（sv2，Agent）
+
+### 6.1 安装 K3s Agent
+
+```bash
+# 在 sv2 上执行（Debian）
+curl -sfL https://get.k3s.io | K3S_URL=https://sv1:6443 \
   K3S_TOKEN=<node-token> \
   sh -s - agent \
   --node-ip=<sv2的Tailscale-IP> \
@@ -286,7 +346,7 @@ curl -sfL https://get.k3s.io | K3S_URL=https://pc1:6443 \
   --disable=traefik
 ```
 
-### 6.3 最终验证
+### 6.2 最终验证
 
 ```bash
 kubectl get nodes -o wide
@@ -375,8 +435,8 @@ Flannel `host-gw` 模式直接通过 Tailscale 的 WireGuard 隧道路由 Pod �
 
 ```bash
 # 从任意设备（包括笔记本）配置 kubectl
-scp pc1:~/.kube/config ~/.kube/config
-sed -i 's/127.0.0.1:6443/pc1:6443/g' ~/.kube/config
+scp sv1:~/.kube/config ~/.kube/config
+sed -i 's/127.0.0.1:6443/sv1:6443/g' ~/.kube/config
 kubectl get nodes
 ```
 
@@ -483,7 +543,7 @@ etcd quorum 丢失，集群暂停。但**数据不丢失**——etcd 数据在 v
 ### Q: kubeconfig 地址是 127.0.0.1？
 
 ```bash
-sed -i 's/127.0.0.1:6443/pc1:6443/g' ~/.kube/config
+sed -i 's/127.0.0.1:6443/sv1:6443/g' ~/.kube/config
 ```
 
 ### Q: Flannel host-gw 下 Pod 通信不通？
