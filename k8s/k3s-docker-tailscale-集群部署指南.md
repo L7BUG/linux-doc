@@ -160,7 +160,6 @@ sv1 仅运行控制面，不跑业务 Pod（`--disable-agent`）。
 curl -sfL https://rancher-mirror.rancher.cn/k3s/k3s-install.sh | \
   INSTALL_K3S_MIRROR=cn INSTALL_K3S_EXEC="server" sh -s - \
   --cluster-init \
-  --tls-san=sv1 --tls-san=pc1 --tls-san=pc2 \
   --node-ip=<sv1的Tailscale-IP> \
   --disable=traefik \
   --disable-agent
@@ -244,7 +243,7 @@ curl -sfL https://rancher-mirror.rancher.cn/k3s/k3s-install.sh | \
   K3S_URL=https://<sv1的Tailscale-IP>:6443 \
   K3S_TOKEN=<node-token> \
   sh -s - agent \
-  --node-ip=<sv2的Tailscale-IP>
+ --node-ip=<sv2的Tailscale-IP>
 ```
 
 ---
@@ -347,7 +346,7 @@ curl -sfL https://rancher-mirror.rancher.cn/k3s/k3s-install.sh | \
   K3S_URL=https://<sv1的Tailscale-IP>:6443 \
   K3S_TOKEN=<node-token> \
   sh -s - agent \
-  --node-ip=<新节点Tailscale-IP>
+ --node-ip=<新节点Tailscale-IP>
 ```
 
 ### 9.4 移除节点
