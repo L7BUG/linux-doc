@@ -93,7 +93,8 @@ EOF
 curl -sfL https://rancher-mirror.rancher.cn/k3s/k3s-install.sh | \
   INSTALL_K3S_MIRROR=cn sh -s - \
   --tls-san=<sv1的Tailscale-IP> \
-  --node-ip=<sv1的Tailscale-IP>
+  --node-ip=<sv1的Tailscale-IP> \
+  --disable-network-policy
 ```
 
 ### 3.1 等待就绪 + 获取令牌
@@ -198,7 +199,7 @@ API Server 证书只默认包含 localhost 和节点 IP。加 `--tls-san=<Tailsc
 
 ### Q: Pod 间 DNS 解析不通？
 
-Docker 环境需在 .env 里加 `--disable-network-policy`，否则 kube-router 会误杀 Pod 流量。
+Server 安装时必须加 `--disable-network-policy`，否则 kube-router 会误杀 Pod 流量（CoreDNS 不通、Service 访问不了）。
 
 ### Q: 镜像拉取慢？
 
