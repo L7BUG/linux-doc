@@ -160,6 +160,7 @@ sv1 仅运行控制面，不跑业务 Pod（`--disable-agent`）。
 curl -sfL https://rancher-mirror.rancher.cn/k3s/k3s-install.sh | \
   INSTALL_K3S_MIRROR=cn INSTALL_K3S_EXEC="server" sh -s - \
   --cluster-init \
+  --tls-san=<sv1的Tailscale-IP> \
   --node-ip=<sv1的Tailscale-IP> \
   --disable=traefik \
   --disable-agent
