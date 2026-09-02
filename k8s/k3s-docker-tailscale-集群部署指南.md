@@ -153,6 +153,18 @@ K3s 使用内置的 containerd，镜像加速配置文件是 `/etc/rancher/k3s/r
 
 > **注意**：必须写到 `/etc/rancher/k3s/registries.yaml`，写到 `/etc/containerd/config.toml` 对 K3s 无效（那是系统 containerd 的配置，K3s 不认）。
 
+### 2.5 Docker 环境特殊配置
+
+K3s in Docker 必须加 `--disable-network-policy`，否则 kube-router 会误杀 Pod 间流量（CoreDNS 不通、Service 访问不了）。
+
+原因：kube-router 在 Docker 容器内无法正确管理 iptables FORWARD 链，默认 DROP 策略会阻断合法的 Pod→Service 流量。开发/测试环境不需要 Network Policy，直接禁用即可。
+
+docker-compose 的 `.env` 文件中已包含此参数：
+
+```
+K3S_SERVER_FLAGS=... --disable=traefik --disable-network-policy
+```
+
 **云服务器（原生安装）**：
 
 ```bash
