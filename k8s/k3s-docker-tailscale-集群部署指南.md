@@ -211,7 +211,7 @@ curl -sfL https://rancher-mirror.rancher.cn/k3s/k3s-install.sh | INSTALL_K3S_MIR
   --cluster-init \
   --tls-san=sv1 --tls-san=pc1 --tls-san=pc2 \
   --node-ip=<sv1的Tailscale-IP> \
-  --flannel-backend=vxlan \
+  \
   --disable=traefik
 ```
 
@@ -584,6 +584,8 @@ etcd quorum 丢失，集群暂停。但**数据不丢失**——etcd 数据在 v
 **不能。** K3s 的 `--node-ip` 参数只接受 IP 地址格式，不接受主机名。能用主机名的参数只有 `--server` 和 `--tls-san`。`--node-ip` 必须填 Tailscale 分配的 IP（`tailscale status` 查看）。
 
 ### Q: `--flannel-backend` 和 `--disable` 能用在 agent 上吗？
+
+**不能。** 这两个都是 server 参数，agent 不认。K3s 默认使用 vxlan 后端，不需要显式指定 `--flannel-backend`。docker-compose 的 `.env` 文件中不要包含这些参数。
 
 **不能。** 这两个都是 server 参数，agent 不认。agent 的网络配置跟随 server，不需要单独指定。docker-compose 的 `.env` 文件中，`K3S_AGENT_FLAGS` 只能包含 `--node-ip` 和 `--server`，不要加其他参数。
 
