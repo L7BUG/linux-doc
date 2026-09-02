@@ -28,7 +28,8 @@
 | 文档 | 简介 |
 |------|------|
 | [K8s 开发者学习手册](k8s/README.md) | 从零搭建 minikube 到部署应用的 5 天学习路径：概念→Pod/Deployment→网络→存储→Helm |
-| [K3s + Docker + Tailscale 多节点集群部署指南](k8s/k3s-docker-tailscale-集群部署指南.md) | 用 Docker 容器运行 K3s Agent，1 台云服务器做 Server（仅控制面），所有节点通过 Tailscale 虚拟局域网互联 |
+| [K3s + Tailscale 分布式集群指南](k8s/k3s-tailscale-分布式集群指南.md) | 基于官方文档，使用 Tailscale VPN 集成，跨网络节点组建 K3s 集群 |
+| [K3s + Docker + Tailscale 多节点集群部署指南](k8s/k3s-docker-tailscale-集群部署指南.md) | Docker 环境运行 K3s Agent（旧方案，待更新） |
 | [Istio 服务网格详解](k8s/istio详解.md) | K8s 微服务的"智能管家"——流量管理、熔断、安全、可观测性 |
 | [K8s + Istio + Spring Boot 实战教程](k8s/istio-springboot.md) | 在 K8s 上用 Istio 管理 Spring Boot 微服务，流量管理、安全、可观测性全链路 |
 

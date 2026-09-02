@@ -52,7 +52,8 @@ Helm 是什么（K8s 的 apt）→ Chart 结构 → 一键部署完整应用 →
 |------|------|------|
 | [Istio 服务网格详解](istio详解.md) | K8s 微服务的"智能管家"——流量管理、熔断、安全、可观测性 | 完成 5 章学习 |
 | [K8s + Istio + Spring Boot 实战教程](istio-springboot.md) | 在 K8s 上用 Istio 管理 Spring Boot 微服务——流量管理、安全、可观测性 | 完成 Istio 详解 |
-| [K3s + Docker + Tailscale 多节点集群部署指南](k3s-docker-tailscale-集群部署指南.md) | 用 Docker 容器运行 K3s Agent，1 台云服务器做 Server，所有节点通过 Tailscale 互联 | 了解 K8s 基础概念 |
+| [K3s + Tailscale 分布式集群指南](k3s-tailscale-分布式集群指南.md) | 基于官方文档，使用 Tailscale VPN 集成，跨网络节点组建 K3s 集群 | 了解 K8s 基础概念 |
+| [K3s + Docker + Tailscale 多节点集群部署指南](k3s-docker-tailscale-集群部署指南.md) | Docker 环境运行 K3s Agent（旧方案，待更新） | 了解 K8s 基础概念 |
 
 ---
 
