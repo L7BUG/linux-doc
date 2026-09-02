@@ -19,7 +19,7 @@
 
 services:
   k3s-agent:
-    image: rancher/k3s:latest
+    image: rancher/k3s:v1.36.4-k3s1
     container_name: k3s-agent
     hostname: ${K3S_HOSTNAME:-k3s-agent}
     privileged: true
@@ -31,13 +31,8 @@ services:
       - ./registries.yaml:/etc/rancher/k3s/registries.yaml
     environment:
       - K3S_TOKEN=${K3S_TOKEN}
-    command: agent ${K3S_AGENT_FLAGS}
-    healthcheck:
-      test: ["CMD-SHELL", "k3s kubectl get nodes 2>/dev/null | grep -q Ready"]
-      interval: 30s
-      timeout: 5s
-      retries: 10
-      start_period: 60s
+      - K3S_URL=${K3S_URL}
+    command: agent --node-ip=${NODE_IP}
 
 volumes:
   k3s-agent-data:
