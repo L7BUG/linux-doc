@@ -1,19 +1,16 @@
 # K3s Docker Compose 配置
-# 用于开发机上通过 Docker 运行 K3s Server（自带 Agent 功能）
+# 用于开发机上通过 Docker 运行 K3s Agent
 #
 # 使用方法：
 #   1. 复制 .env.company 或 .env.home 为 .env
 #   2. 修改 .env 中的 Tailscale IP
 #   3. docker compose up -d
-#   4. docker compose logs -f（等待启动完成）
-#   5. docker cp k3s-server:/etc/rancher/k3s/k3s.yaml ~/.kube/config
-#   6. 修改 kubeconfig 中的 127.0.0.1 为 Tailscale IP
 #
-# K3s server 自带 agent 功能，不需要单独跑 agent 容器。
+# 集群 leader 是云服务器 B（sv1），开发机作为 Agent 加入。
 #
 # 网络模式用 host（共享宿主机网络）：
 #   1. 容器内需要解析 Tailscale 主机名
-#   2. K3s 需要直接访问宿主机网卡（Flannel/etcd 通信）
+#   2. K3s 需要直接访问宿主机网卡（Flannel 通信）
 #
 # 停止/启动：
 #   docker compose stop     # 停止（保留数据）
@@ -21,26 +18,26 @@
 #   docker compose down -v  # 销毁（删除数据，谨慎！）
 
 services:
-  k3s-server:
+  k3s-agent:
     image: rancher/k3s:latest
-    container_name: k3s-server
-    hostname: ${K3S_HOSTNAME:-k3s-server}
+    container_name: k3s-agent
+    hostname: ${K3S_HOSTNAME:-k3s-agent}
     privileged: true
     restart: unless-stopped
     network_mode: host
     volumes:
-      - k3s-server-data:/var/lib/rancher/k3s
+      - k3s-agent-data:/var/lib/rancher/k3s
       - /dev/net/tun:/dev/net/tun
       - ./registries.yaml:/etc/rancher/k3s/registries.yaml
     environment:
       - K3S_TOKEN=${K3S_TOKEN}
-    command: server ${K3S_SERVER_FLAGS}
+    command: agent ${K3S_AGENT_FLAGS}
     healthcheck:
-      test: ["CMD-SHELL", "kubectl get nodes | grep -q Ready"]
-      interval: 15s
+      test: ["CMD-SHELL", "k3s kubectl get nodes 2>/dev/null | grep -q Ready"]
+      interval: 30s
       timeout: 5s
       retries: 10
       start_period: 60s
 
 volumes:
-  k3s-server-data:
+  k3s-agent-data:
