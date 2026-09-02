@@ -45,7 +45,7 @@
 
 | 机器 | 配置 | 角色 | 部署方式 | 在线情况 |
 |------|------|------|---------|---------|
-| 云服务器 B | 4C/4GB | **Server（leader）+ Agent** | 原生 K3s | 7×24 |
+| 云服务器 B | 4C/4GB | **Server（leader，仅控制面）** | 原生 K3s | 7×24 |
 | 公司开发机 | 6C/12T + 32GB | **Server + Agent** | Docker 容器 | 很少关机 |
 | 家里开发机 | 6C/12T + 32GB | **Server + Agent** | Docker 容器 | 可能关机 |
 | 云服务器 A | 2C/2GB | **Agent** | 原生 K3s | 7×24 |
@@ -201,7 +201,7 @@ docker compose up -d
 
 ## 3. Phase 1：云服务器 B（sv1，集群 leader）
 
-sv1 是 7×24 在线的云服务器，作为集群第一个 server，负责初始化 etcd。
+sv1 是 7×24 在线的云服务器，作为集群 leader，仅运行控制面组件（etcd、API Server、Scheduler），不运行工作负载。
 
 ### 3.1 安装 K3s（原生，不用 Docker）
 
@@ -212,7 +212,8 @@ curl -sfL https://rancher-mirror.rancher.cn/k3s/k3s-install.sh | INSTALL_K3S_MIR
   --tls-san=sv1 --tls-san=pc1 --tls-san=pc2 \
   --node-ip=<sv1的Tailscale-IP> \
   \
-  --disable=traefik
+  --disable=traefik \
+  --disable-agent
 ```
 
 > **替换占位符**：`<sv1的Tailscale-IP>` 换成实际 IP（`tailscale status` 查看）。
