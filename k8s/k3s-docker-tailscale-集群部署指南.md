@@ -145,7 +145,7 @@ sudo ufw allow 2379:2380/tcp
 sudo ufw allow 10250/tcp
 ```
 
-> 如果 Flannel 使用 `host-gw` 后端（本文推荐），可以不开放 8472/UDP。K3s 端口可以只放 Tailscale 内网，用 ACL 限制访问，更安全。
+> Flannel vxlan 需要开放 UDP 8472 端口（跨节点 Pod 通信）。K3s 端口可以只放 Tailscale 内网，用 ACL 限制访问，更安全。
 
 ### 2.4 配置镜像加速（所有机器）
 
@@ -211,7 +211,7 @@ curl -sfL https://rancher-mirror.rancher.cn/k3s/k3s-install.sh | INSTALL_K3S_MIR
   --cluster-init \
   --tls-san=sv1 --tls-san=pc1 --tls-san=pc2 \
   --node-ip=<sv1的Tailscale-IP> \
-  --flannel-backend=host-gw \
+  --flannel-backend=vxlan \
   --disable=traefik
 ```
 
@@ -468,14 +468,14 @@ kubectl delete svc test-nginx
 Pod A (公司) → Pod B (云服务器A)
      │                    │
      └── K3s Flannel ────┘
-          (host-gw 直接路由)
+          (vxlan 封装转发)
                │
         Tailscale WireGuard 隧道
                │
      100.64.0.1 ←→ 100.64.0.11
 ```
 
-Flannel `host-gw` 模式直接通过 Tailscale 的 WireGuard 隧道路由 Pod 流量，无需额外封装。
+Flannel vxlan 模式将 Pod 流量封装在 UDP 包中（端口 8472），通过 Tailscale 隧道传输。节点间不需要直连路由，适合跨网场景。
 
 ### 8.2 远程管理
 
@@ -593,7 +593,7 @@ etcd quorum 丢失，集群暂停。但**数据不丢失**——etcd 数据在 v
 sed -i 's/127.0.0.1:6443/sv1:6443/g' ~/.kube/config
 ```
 
-### Q: Flannel host-gw 下 Pod 通信不通？
+### Q: Flannel vxlan 下 Pod 通信不通？
 
 检查 IP 转发：
 
